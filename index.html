@@ -29,18 +29,36 @@
         /* 3Dキャンバス */
         #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
 
-        /* UIパネル (※最初は非表示、近づくと表示) */
+        /* 画像左側のハシゴメーターUI再現 */
+        #ladder-ui {
+            position: absolute; left: 20px; top: 20px; bottom: 20px; width: 70px;
+            z-index: 10; display: flex; flex-direction: column; align-items: center; pointer-events: none;
+        }
+        .mother-icon {
+            width: 65px; height: 65px; background: #00ff66; border: 4px solid #009933;
+            border-radius: 50% 50% 10% 10%; display: flex; align-items: center; justify-content: center;
+            font-size: 35px; box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 2;
+        }
+        .ladder-body {
+            width: 30px; flex-grow: 1; margin-top: -10px;
+            border-left: 6px solid #ffcc00; border-right: 6px solid #ffcc00;
+            display: flex; flex-direction: column; justify-content: space-evenly;
+            background: rgba(0,0,0,0.1);
+        }
+        .ladder-rung { height: 5px; background: #ffcc00; width: 100%; }
+
+        /* UIパネル (町の人に近づくと表示) */
         #ui-layer {
-            display: none; position: absolute; bottom: 20px; width: 100%; z-index: 10;
+            display: none; position: absolute; bottom: 20px; width: 100%; z-index: 20;
             flex-direction: column; align-items: center; pointer-events: none;
         }
         .dialog {
-            pointer-events: auto; background: rgba(255,255,255,0.9); border: 4px solid #ffcc00;
+            pointer-events: auto; background: rgba(255,255,255,0.95); border: 4px solid #ffcc00;
             border-radius: 15px; padding: 15px; margin-bottom: 15px; max-width: 600px;
-            text-align: center; font-weight: bold; font-size: 18px; color: #333;
+            text-align: center; font-weight: bold; font-size: 18px; color: #333; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
         .sentence-panel {
-            pointer-events: auto; background: rgba(0, 0, 0, 0.8); border: 4px solid #00e5ff;
+            pointer-events: auto; background: rgba(0, 0, 0, 0.85); border: 4px solid #00e5ff;
             border-radius: 15px; padding: 20px; text-align: center;
         }
         select {
@@ -76,7 +94,23 @@
     <div id="intro-overlay">
         <h2 style="color:white; margin-bottom: 10px;">続・せがれいじり風 オープニング</h2>
         <iframe width="640" height="360" src="https://www.youtube.com/embed/hpQIPh4-kRE?rel=0" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-        <button class="start-btn" onclick="startGame()">動画を見たら街へいく（ゲーム開始）</button>
+        <button class="start-btn" onclick="startGame()">動画を見たら地球へいく（ゲーム開始）</button>
+    </div>
+
+    <!-- 左側のハシゴメーターUI -->
+    <div id="ladder-ui">
+        <div class="mother-icon">👧</div>
+        <div class="ladder-body">
+            <div class="ladder-rung"></div>
+            <div class="ladder-rung"></div>
+            <div class="ladder-rung"></div>
+            <div class="ladder-rung"></div>
+            <div class="ladder-rung"></div>
+            <div class="ladder-rung"></div>
+            <div class="ladder-rung"></div>
+            <div class="ladder-rung"></div>
+            <div class="ladder-rung"></div>
+        </div>
     </div>
 
     <!-- シュールアニメーション演出（変珍時） -->
@@ -85,11 +119,11 @@
     <!-- 3D表示領域 -->
     <div id="canvas-container"></div>
 
-    <!-- UI (近づいた時だけ表示) -->
+    <!-- UI (町の人の近くで表示) -->
     <div id="ui-layer">
         <div class="dialog">
-            👤 こまったちゃん（人間型アンドロイド）<br>
-            「平凡な見た目に飽きたロボ…。作文の力でボクを変珍（へんちん）させてほしいロボ！」
+            👤 まちのひと<br>
+            「ボクをヘンテコな文章で変珍（へんちん）させてみてくれ～！」
         </div>
         <div class="sentence-panel">
             <select id="w1">
@@ -148,15 +182,15 @@
         document.getElementById('intro-overlay').style.display = 'none';
         if (audioCtx.state === 'suspended') audioCtx.resume();
         init3D();
-        alert("【操作方法】\nキーボードの「WASD」または「矢印キー」で主人公を操作して、奥にいるこまったちゃんに近づいてね！");
+        alert("【操作方法】\n「WASD」または「矢印キー」で矢印頭の主人公を動かそう！\nアンドロイドが後ろをついてくるよ！町の人に話しかけて変珍させてね！");
     }
 
     // --- Three.js 3Dグラフィック処理 ---
-    let scene, camera, renderer, androidGroup, playerGroup;
-    let skyTexture, stoneTexture, grassTexture;
-    let leftLeg, rightLeg, leftArm, rightArm; // 歩行アニメーション用パーツ
+    let scene, camera, renderer;
+    let playerGroup, companionAndroidGroup, npcGroup;
+    let planetMesh;
     let isAnimating = false;
-    let walkTime = 0;
+    const PLANET_RADIUS = 22; // 地球の半径
 
     // キーボード入力の状態管理
     const keys = { w: false, a: false, s: false, d: false, W: false, A: false, S: false, D: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
@@ -166,57 +200,54 @@
     function init3D() {
         const container = document.getElementById('canvas-container');
         scene = new THREE.Scene();
-
-        // 1. インターネット上の空テクスチャを背景に設定
-        const textureLoader = new THREE.TextureLoader();
-        skyTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/2294472375_24a3b8ef46_o.jpg', () => {
-            skyTexture.mapping = THREE.EquirectangularReflectionMapping;
-            scene.background = skyTexture;
-        });
-
-        // 2. 地面（芝生テクスチャ）
-        grassTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/terrain/grasslight-big.jpg');
-        grassTexture.wrapS = THREE.RepeatWrapping;
-        grassTexture.wrapT = THREE.RepeatWrapping;
-        grassTexture.repeat.set(10, 10);
-        
-        const floorMat = new THREE.MeshStandardMaterial({ map: grassTexture, roughness: 0.8 });
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
-        floor.rotation.x = -Math.PI / 2;
-        scene.add(floor);
-
-        // 石テクスチャ（モアイ用）
-        stoneTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/brick_diffuse.jpg');
+        scene.background = new THREE.Color(0x1e90ff); // 画像のような鮮やかな青空
 
         camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.0;
         container.appendChild(renderer.domElement);
 
         // 照明
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
-        dirLight.position.set(10, 20, 15);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        dirLight.position.set(20, 40, 20);
         scene.add(dirLight);
 
-        // オブジェクトグループ構築
-        androidGroup = new THREE.Group();
-        androidGroup.position.set(0, 0, -6);
-        scene.add(androidGroup);
+        // ★ 1. 地球（球体の世界）の作成（緑地と茶色の土）
+        const planetGeo = new THREE.SphereGeometry(PLANET_RADIUS, 64, 64);
+        const planetMat = new THREE.MeshStandardMaterial({ color: 0x00e600, roughness: 0.8 });
+        planetMesh = new THREE.Mesh(planetGeo, planetMat);
+        scene.add(planetMesh);
 
+        // 地球の上に大きな茶色の土のパッチ（画像の地面再現）
+        const dirtGeo = new THREE.SphereGeometry(PLANET_RADIUS + 0.05, 32, 32, 0, Math.PI*2, 0, 0.5);
+        const dirtMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b, roughness: 0.9 });
+        const dirtMesh = new THREE.Mesh(dirtGeo, dirtMat);
+        dirtMesh.rotation.z = 0.4;
+        scene.add(dirtMesh);
+
+        // ★ 2. 画像そっくりの「丸い頭の木々」と「ピンクの花」を地球上に生やす
+        buildWorldForest();
+
+        // ★ 3. 主人公（黄色の矢印頭キャラ）
         playerGroup = new THREE.Group();
-        playerGroup.position.set(0, 0, 0);
         scene.add(playerGroup);
+        buildYellowArrowPlayer(playerGroup);
+        playerGroup.position.set(0, PLANET_RADIUS, 0);
 
-        // 主人公（矢印頭のせがれ）モデル生成
-        buildArrowPlayerModel(playerGroup);
-        
-        // こまったちゃん（人間型アンドロイド）初期モデル
-        loadInternetModel('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/models/gltf/Xbot.glb', androidGroup);
+        // ★ 4. アンドロイド（主人公の後ろについてくる仲間）
+        companionAndroidGroup = new THREE.Group();
+        scene.add(companionAndroidGroup);
+        buildCompanionAndroid(companionAndroidGroup);
+        companionAndroidGroup.position.set(0, PLANET_RADIUS, -2);
+
+        // ★ 5. 町の人（画像のシュールな大頭キャラ）
+        npcGroup = new THREE.Group();
+        scene.add(npcGroup);
+        buildSurrealNPC(npcGroup);
+        npcGroup.position.set(-3, PLANET_RADIUS, -4);
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -227,154 +258,173 @@
         animate();
     }
 
-    // ★ 主人公モデル（頭：赤矢印, 体：人間風）
-    function buildArrowPlayerModel(group) {
-        clearGroup(group);
-        
-        const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.5 });
-        const shirtMat = new THREE.MeshStandardMaterial({ color: 0x0088ff, roughness: 0.4 });
-        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 });
-        const arrowMat = new THREE.MeshStandardMaterial({ color: 0xff0044, metalness: 0.5, roughness: 0.2 });
+    // 地球の上に放射状に木と花を生やす
+    function buildWorldForest() {
+        const treeCount = 40;
+        for (let i = 0; i < treeCount; i++) {
+            const tree = createTreeMesh();
+            // ランダムな位置（北半球に集中）
+            const phi = Math.random() * Math.PI * 0.4;
+            const theta = Math.random() * Math.PI * 2;
 
-        // 胴体
-        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.5), shirtMat);
-        torso.position.y = 1.6;
-        group.add(torso);
+            const x = PLANET_RADIUS * Math.sin(phi) * Math.cos(theta);
+            const y = PLANET_RADIUS * Math.cos(phi);
+            const z = PLANET_RADIUS * Math.sin(phi) * Math.sin(theta);
 
-        // 脚（歩行アニメ用に保持）
-        leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.0, 0.3), pantsMat);
-        leftLeg.position.set(-0.25, 0.5, 0);
-        rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.0, 0.3), pantsMat);
-        rightLeg.position.set(0.25, 0.5, 0);
-        group.add(leftLeg, rightLeg);
+            tree.position.set(x, y, z);
+            // 地球の中心から外側を向くように回転
+            const up = new THREE.Vector3(x, y, z).normalize();
+            tree.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
 
-        // 腕
-        leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), skinMat);
-        leftArm.position.set(-0.55, 1.5, 0);
-        rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), skinMat);
-        rightArm.position.set(0.55, 1.5, 0);
-        group.add(leftArm, rightArm);
-
-        // 矢印の頭
-        const arrowHeadGroup = new THREE.Group();
-        arrowHeadGroup.position.y = 2.6;
-
-        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.9, 4), arrowMat);
-        cone.position.y = 0.4;
-        cone.rotation.y = Math.PI / 4;
-
-        const stem = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), arrowMat);
-        stem.position.y = -0.1;
-
-        arrowHeadGroup.add(cone, stem);
-        group.add(arrowHeadGroup);
-    }
-
-    // 外部GLTFモデル読み込み
-    function loadInternetModel(url, targetGroup) {
-        const loader = new THREE.GLTFLoader();
-        loader.load(url, function(gltf) {
-            clearGroup(targetGroup);
-            const model = gltf.scene;
-            model.scale.set(1.5, 1.5, 1.5);
-            targetGroup.add(model);
-        }, undefined, function(error) {
-            console.error('モデルロード失敗', error);
-            buildDefaultAndroid(targetGroup);
-        });
-    }
-
-    function buildDefaultAndroid(group) {
-        clearGroup(group);
-        const mat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.8 });
-        const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.5, 1), mat);
-        body.position.y = 1.5;
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), mat);
-        head.position.y = 2.8;
-        group.add(body, head);
-    }
-
-    // ★ 1. リアルな「黄金のウンチ」モデル（背景空の反射・滑らかなスプライン曲線）
-    function buildRealPoopModel(group) {
-        clearGroup(group);
-        const points = [];
-        for (let i = 0; i < 30; i++) {
-            const t = i / 30;
-            const radius = (1 - t) * Math.sin(t * Math.PI) * 1.2 + 0.1;
-            const y = t * 2.5;
-            points.push(new THREE.Vector2(radius, y));
+            scene.add(tree);
         }
-        const geo = new THREE.LatheGeometry(points, 32);
-        const goldMat = new THREE.MeshStandardMaterial({
-            color: 0xffd700,
-            metalness: 0.95,
-            roughness: 0.1,
-            envMap: skyTexture,
-            envMapIntensity: 2.0
-        });
-        const poop = new THREE.Mesh(geo, goldMat);
-        poop.position.y = 0.2;
-        group.add(poop);
+
+        // ピンクのお花を配置
+        for (let i = 0; i < 15; i++) {
+            const flower = createFlowerMesh();
+            const phi = Math.random() * Math.PI * 0.3;
+            const theta = Math.random() * Math.PI * 2;
+            const x = PLANET_RADIUS * Math.sin(phi) * Math.cos(theta);
+            const y = PLANET_RADIUS * Math.cos(phi);
+            const z = PLANET_RADIUS * Math.sin(phi) * Math.sin(theta);
+
+            flower.position.set(x, y, z);
+            const up = new THREE.Vector3(x, y, z).normalize();
+            flower.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+            scene.add(flower);
+        }
     }
 
-    // ★ 2. リアルな「モアイ像」モデル（石材テクスチャ仕上げ）
-    function buildRealMoaiModel(group) {
-        clearGroup(group);
-        const stoneMat = new THREE.MeshStandardMaterial({
-            map: stoneTexture,
-            roughness: 0.9,
-            metalness: 0.1
-        });
-        
-        // 頭部立体
-        const head = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.2, 1.6, 4, 4, 4), stoneMat);
-        head.position.y = 1.8;
-        
-        // 鼻
-        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.2, 0.7), stoneMat);
-        nose.position.set(0, 1.8, 0.9);
-        
-        // 額・眉の出っ張り
-        const brow = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.4, 0.8), stoneMat);
-        brow.position.set(0, 2.7, 0.7);
+    // 丸い頭の木（画像そのままのデザイン）
+    function createTreeMesh() {
+        const group = new THREE.Group();
+        const trunkMat = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x00b300, roughness: 0.5 });
 
-        // 唇
-        const lips = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.6), stoneMat);
-        lips.position.set(0, 0.9, 0.8);
+        // 茶色の幹
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 3, 8), trunkMat);
+        trunk.position.y = 1.5;
 
-        group.add(head, nose, brow, lips);
+        // 丸い緑の頭
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), leafMat);
+        leaf.position.y = 3.2;
+
+        group.add(trunk, leaf);
+        return group;
     }
 
-    // ★ 3. リアルな「せがれ（キリン首）」モデル
-    function buildRealSegareModel(group) {
+    // ピンクの花
+    function createFlowerMesh() {
+        const group = new THREE.Group();
+        const petalMat = new THREE.MeshStandardMaterial({ color: 0xff1493 });
+        const centerMat = new THREE.MeshStandardMaterial({ color: 0xffff00 });
+
+        const center = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 8), centerMat);
+        center.position.y = 0.1;
+        group.add(center);
+
+        for (let i = 0; i < 5; i++) {
+            const petal = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.15), petalMat);
+            petal.position.set(Math.cos(i * Math.PI*2/5)*0.25, 0.1, Math.sin(i * Math.PI*2/5)*0.25);
+            petal.rotation.y = -i * Math.PI*2/5;
+            group.add(petal);
+        }
+        return group;
+    }
+
+    // 主人公（黄色い矢印の頭＋体）
+    function buildYellowArrowPlayer(group) {
         clearGroup(group);
-        const yellowMat = new THREE.MeshStandardMaterial({
-            color: 0xf2b705,
-            roughness: 0.4,
-            metalness: 0.1
-        });
-        const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1 });
+        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.2 });
+        const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
 
-        // 胴体
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 1.6, 16), yellowMat);
-        body.position.set(0, 0.8, 0);
+        // 体
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.4), bodyMat);
+        body.position.y = 0.8;
+        
+        // 足
+        const legL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), bodyMat);
+        legL.position.set(-0.2, 0.3, 0);
+        const legR = legL.clone();
+        legR.position.x = 0.2;
 
-        // 首（滑らかなテーパー）
-        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 3.0, 16), yellowMat);
-        neck.position.set(0, 2.5, 0.3);
-        neck.rotation.x = -0.1;
+        // 黄色の矢印頭（画像のデザイン）
+        const arrowHead = new THREE.Mesh(new THREE.ConeGeometry(0.6, 0.8, 4), yellowMat);
+        arrowHead.position.y = 1.6;
+        arrowHead.rotation.y = Math.PI / 4;
 
-        // 頭部
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 1.2), yellowMat);
-        head.position.set(0, 4.0, 0.7);
+        group.add(body, legL, legR, arrowHead);
+    }
 
-        // つぶらな瞳
-        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), eyeMat);
-        eyeL.position.set(-0.36, 4.1, 1.0);
-        const eyeR = eyeL.clone();
-        eyeR.position.x = 0.36;
+    // ついてくるアンドロイド
+    function buildCompanionAndroid(group) {
+        clearGroup(group);
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8, roughness: 0.2 });
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff });
 
-        group.add(body, neck, head, eyeL, eyeR);
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 0.8, 8), metalMat);
+        body.position.y = 0.6;
+
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.4), metalMat);
+        head.position.y = 1.2;
+
+        const eye = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), eyeMat);
+        eye.position.set(0, 1.25, 0.2);
+
+        group.add(body, head, eye);
+    }
+
+    // 町の人（画像そっくりのシュールな大頭キャラ）
+    function buildSurrealNPC(group) {
+        clearGroup(group);
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdbac });
+        const hairMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const pantsMat = new THREE.MeshStandardMaterial({ color: 0xd2b48c });
+
+        // 巨大な頭
+        const head = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.0), skinMat);
+        head.position.y = 1.6;
+
+        // 黒髪
+        const hair = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.4, 1.05), hairMat);
+        hair.position.y = 2.1;
+
+        // 小さい体
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 0.3), pantsMat);
+        body.position.y = 0.7;
+
+        group.add(head, hair, body);
+    }
+
+    // 変珍用モデル（ウンチ/モアイ/せがれ）
+    function buildPoopModel(group) {
+        clearGroup(group);
+        const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
+        const t1 = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.4, 16, 32), goldMat);
+        t1.rotation.x = Math.PI/2; t1.position.y = 0.4;
+        const top = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.8, 16), goldMat);
+        top.position.y = 1.2;
+        group.add(t1, top);
+    }
+
+    function buildMoaiModel(group) {
+        clearGroup(group);
+        const stoneMat = new THREE.MeshStandardMaterial({ color: 0x778899, roughness: 0.9 });
+        const face = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.2, 1.2), stoneMat);
+        face.position.y = 1.1;
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.8, 0.5), stoneMat);
+        nose.position.set(0, 1.1, 0.7);
+        group.add(face, nose);
+    }
+
+    function buildSegareModel(group) {
+        clearGroup(group);
+        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 1.0), yellowMat);
+        body.position.set(0, 0.6, 0);
+        const neck = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.8, 0.3), yellowMat);
+        neck.position.set(0, 1.5, 0.3);
+        group.add(body, neck);
     }
 
     function clearGroup(group) {
@@ -413,64 +463,50 @@
             overlay.style.display = 'none';
             playPop();
 
-            // 選択に応じてリアルに変珍！
-            if (w3 === 'unko') buildRealPoopModel(androidGroup);
-            else if (w3 === 'moai') buildRealMoaiModel(androidGroup);
-            else if (w3 === 'segare') buildRealSegareModel(androidGroup);
+            // 町の人が変珍！
+            if (w3 === 'unko') buildPoopModel(npcGroup);
+            else if (w3 === 'moai') buildMoaiModel(npcGroup);
+            else if (w3 === 'segare') buildSegareModel(npcGroup);
             
             isAnimating = false;
         }, 3000);
     }
 
     // メインアニメーションループ
+    let angle = 0;
     function animate() {
         requestAnimationFrame(animate);
         
-        if (playerGroup && androidGroup) {
+        if (playerGroup && companionAndroidGroup && npcGroup) {
             if (!isAnimating) {
                 // 移動処理
-                const speed = 0.12;
-                let moveX = 0, moveZ = 0;
+                const speed = 0.08;
+                let moved = false;
 
-                if (keys.w || keys.W || keys.ArrowUp) moveZ -= speed;
-                if (keys.s || keys.S || keys.ArrowDown) moveZ += speed;
-                if (keys.a || keys.A || keys.ArrowLeft) moveX -= speed;
-                if (keys.d || keys.D || keys.ArrowRight) moveX += speed;
+                if (keys.w || keys.W || keys.ArrowUp) { playerGroup.position.z -= speed; moved = true; }
+                if (keys.s || keys.S || keys.ArrowDown) { playerGroup.position.z += speed; moved = true; }
+                if (keys.a || keys.A || keys.ArrowLeft) { playerGroup.position.x -= speed; moved = true; }
+                if (keys.d || keys.D || keys.ArrowRight) { playerGroup.position.x += speed; moved = true; }
 
-                if (moveX !== 0 || moveZ !== 0) {
-                    playerGroup.position.x += moveX;
-                    playerGroup.position.z += moveZ;
+                // 地球のカーブに沿ってY座標を維持
+                const distFromCenter = Math.sqrt(playerGroup.position.x ** 2 + playerGroup.position.z ** 2);
+                playerGroup.position.y = Math.sqrt(Math.max(1, PLANET_RADIUS ** 2 - distFromCenter ** 2));
 
-                    // 進行方向を向く
-                    playerGroup.rotation.y = Math.atan2(moveX, moveZ);
+                // ★ アンドロイドが主人公の後ろをついてくる（スムーズ追従）
+                const targetFollowPos = playerGroup.position.clone().add(new THREE.Vector3(0.8, 0, 1.2));
+                companionAndroidGroup.position.lerp(targetFollowPos, 0.08);
 
-                    // 歩行アニメーション（手足を振る）
-                    walkTime += 0.2;
-                    if (leftLeg && rightLeg) {
-                        leftLeg.rotation.x = Math.sin(walkTime) * 0.6;
-                        rightLeg.rotation.x = -Math.sin(walkTime) * 0.6;
-                        leftArm.rotation.x = -Math.sin(walkTime) * 0.6;
-                        rightArm.rotation.x = Math.sin(walkTime) * 0.6;
-                    }
-                } else {
-                    // 停止時は姿勢リセット
-                    if (leftLeg && rightLeg) {
-                        leftLeg.rotation.x = 0; rightLeg.rotation.x = 0;
-                        leftArm.rotation.x = 0; rightArm.rotation.x = 0;
-                    }
-                }
+                // カメラ追従（画像のカメラアングルを維持）
+                camera.position.x = playerGroup.position.x + 3;
+                camera.position.z = playerGroup.position.z + 7;
+                camera.position.y = playerGroup.position.y + 3;
+                camera.lookAt(playerGroup.position.x, playerGroup.position.y + 0.5, playerGroup.position.z);
 
-                // カメラ追従
-                camera.position.x = playerGroup.position.x;
-                camera.position.z = playerGroup.position.z + 8;
-                camera.position.y = playerGroup.position.y + 4;
-                camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z);
-
-                // こまったちゃんとの接近判定
-                const distance = playerGroup.position.distanceTo(androidGroup.position);
+                // 町の人との近接判定
+                const distanceToNPC = playerGroup.position.distanceTo(npcGroup.position);
                 const uiLayer = document.getElementById('ui-layer');
 
-                if (distance < 4.0) {
+                if (distanceToNPC < 3.5) {
                     uiLayer.style.display = 'flex';
                 } else {
                     uiLayer.style.display = 'none';
