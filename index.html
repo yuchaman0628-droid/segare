@@ -148,53 +148,74 @@
         document.getElementById('intro-overlay').style.display = 'none';
         if (audioCtx.state === 'suspended') audioCtx.resume();
         init3D();
-        alert("【操作方法】\nキーボードの「WASD」または「矢印キー」で矢印頭の主人公を動かして、奥にいるこまったちゃんに近づいてお願いを聞いてね！");
+        alert("【操作方法】\nキーボードの「WASD」または「矢印キー」で主人公を操作して、奥にいるこまったちゃんに近づいてね！");
     }
 
     // --- Three.js 3Dグラフィック処理 ---
     let scene, camera, renderer, androidGroup, playerGroup;
+    let skyTexture, stoneTexture, grassTexture;
+    let leftLeg, rightLeg, leftArm, rightArm; // 歩行アニメーション用パーツ
     let isAnimating = false;
+    let walkTime = 0;
 
     // キーボード入力の状態管理
-    const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
-    window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
-    window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
+    const keys = { w: false, a: false, s: false, d: false, W: false, A: false, S: false, D: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+    window.addEventListener('keydown', (e) => { if (e.key in keys) keys[e.key] = true; });
+    window.addEventListener('keyup', (e) => { if (e.key in keys) keys[e.key] = false; });
 
     function init3D() {
         const container = document.getElementById('canvas-container');
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb);
+
+        // 1. インターネット上の空テクスチャを背景に設定
+        const textureLoader = new THREE.TextureLoader();
+        skyTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/2294472375_24a3b8ef46_o.jpg', () => {
+            skyTexture.mapping = THREE.EquirectangularReflectionMapping;
+            scene.background = skyTexture;
+        });
+
+        // 2. 地面（芝生テクスチャ）
+        grassTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/terrain/grasslight-big.jpg');
+        grassTexture.wrapS = THREE.RepeatWrapping;
+        grassTexture.wrapT = THREE.RepeatWrapping;
+        grassTexture.repeat.set(10, 10);
+        
+        const floorMat = new THREE.MeshStandardMaterial({ map: grassTexture, roughness: 0.8 });
+        const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        scene.add(floor);
+
+        // 石テクスチャ（モアイ用）
+        stoneTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/brick_diffuse.jpg');
 
         camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.0;
         container.appendChild(renderer.domElement);
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        // 照明
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-        dirLight.position.set(5, 10, 7);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(10, 20, 15);
         scene.add(dirLight);
 
-        const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshStandardMaterial({ color: 0x55aa55 }));
-        floor.rotation.x = -Math.PI / 2;
-        scene.add(floor);
-
-        // 1. こまったちゃん（人間型アンドロイド・NPC）
+        // オブジェクトグループ構築
         androidGroup = new THREE.Group();
         androidGroup.position.set(0, 0, -6);
         scene.add(androidGroup);
 
-        // 2. 主人公（矢印の頭＋人間の身体）
         playerGroup = new THREE.Group();
         playerGroup.position.set(0, 0, 0);
         scene.add(playerGroup);
 
-        // 主人公モデル構築（矢印頭＋人間身体）
+        // 主人公（矢印頭のせがれ）モデル生成
         buildArrowPlayerModel(playerGroup);
         
-        // インターネット上の無料人間型3Dモデル（Xbot）を読み込む
+        // こまったちゃん（人間型アンドロイド）初期モデル
         loadInternetModel('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/models/gltf/Xbot.glb', androidGroup);
 
         window.addEventListener('resize', () => {
@@ -206,44 +227,42 @@
         animate();
     }
 
-    // ★ 主人公モデル（頭：赤矢印, 体：人間風の関節パーツ）
+    // ★ 主人公モデル（頭：赤矢印, 体：人間風）
     function buildArrowPlayerModel(group) {
         clearGroup(group);
         
-        const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdbac }); // 肌色
-        const shirtMat = new THREE.MeshStandardMaterial({ color: 0x0088ff }); // 青シャツ
-        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x333333 }); // 黒ズボン
-        const arrowMat = new THREE.MeshStandardMaterial({ color: 0xff0000, metalness: 0.3 }); // 赤矢印頭
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdbac, roughness: 0.5 });
+        const shirtMat = new THREE.MeshStandardMaterial({ color: 0x0088ff, roughness: 0.4 });
+        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.6 });
+        const arrowMat = new THREE.MeshStandardMaterial({ color: 0xff0044, metalness: 0.5, roughness: 0.2 });
 
-        // --- 1. 人間の身体 ---
         // 胴体
         const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.5), shirtMat);
         torso.position.y = 1.6;
-        
-        // 脚
-        const legL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.0, 0.3), pantsMat);
-        legL.position.set(-0.25, 0.5, 0);
-        const legR = legL.clone();
-        legR.position.x = 0.25;
+        group.add(torso);
+
+        // 脚（歩行アニメ用に保持）
+        leftLeg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.0, 0.3), pantsMat);
+        leftLeg.position.set(-0.25, 0.5, 0);
+        rightLeg = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.0, 0.3), pantsMat);
+        rightLeg.position.set(0.25, 0.5, 0);
+        group.add(leftLeg, rightLeg);
 
         // 腕
-        const armL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), skinMat);
-        armL.position.set(-0.55, 1.5, 0);
-        const armR = armL.clone();
-        armR.position.x = 0.55;
+        leftArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), skinMat);
+        leftArm.position.set(-0.55, 1.5, 0);
+        rightArm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), skinMat);
+        rightArm.position.set(0.55, 1.5, 0);
+        group.add(leftArm, rightArm);
 
-        group.add(torso, legL, legR, armL, armR);
-
-        // --- 2. 矢印の頭 ---
+        // 矢印の頭
         const arrowHeadGroup = new THREE.Group();
-        arrowHeadGroup.position.y = 2.6; // 首の上
+        arrowHeadGroup.position.y = 2.6;
 
-        // 矢印のコーン部分（三角頭）
-        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.6, 0.8, 4), arrowMat);
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.9, 4), arrowMat);
         cone.position.y = 0.4;
         cone.rotation.y = Math.PI / 4;
 
-        // 矢印の軸（首との結合部）
         const stem = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), arrowMat);
         stem.position.y = -0.1;
 
@@ -251,7 +270,7 @@
         group.add(arrowHeadGroup);
     }
 
-    // 外部モデル読み込み用関数
+    // 外部GLTFモデル読み込み
     function loadInternetModel(url, targetGroup) {
         const loader = new THREE.GLTFLoader();
         loader.load(url, function(gltf) {
@@ -260,7 +279,7 @@
             model.scale.set(1.5, 1.5, 1.5);
             targetGroup.add(model);
         }, undefined, function(error) {
-            console.error('モデルの読み込みに失敗しました', error);
+            console.error('モデルロード失敗', error);
             buildDefaultAndroid(targetGroup);
         });
     }
@@ -275,38 +294,87 @@
         group.add(body, head);
     }
 
-    function buildSegareModel(group) {
+    // ★ 1. リアルな「黄金のウンチ」モデル（背景空の反射・滑らかなスプライン曲線）
+    function buildRealPoopModel(group) {
         clearGroup(group);
-        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.3, roughness: 0.4 });
-        const body = new THREE.Mesh(new THREE.BoxGeometry(1, 0.8, 1.5), yellowMat);
+        const points = [];
+        for (let i = 0; i < 30; i++) {
+            const t = i / 30;
+            const radius = (1 - t) * Math.sin(t * Math.PI) * 1.2 + 0.1;
+            const y = t * 2.5;
+            points.push(new THREE.Vector2(radius, y));
+        }
+        const geo = new THREE.LatheGeometry(points, 32);
+        const goldMat = new THREE.MeshStandardMaterial({
+            color: 0xffd700,
+            metalness: 0.95,
+            roughness: 0.1,
+            envMap: skyTexture,
+            envMapIntensity: 2.0
+        });
+        const poop = new THREE.Mesh(geo, goldMat);
+        poop.position.y = 0.2;
+        group.add(poop);
+    }
+
+    // ★ 2. リアルな「モアイ像」モデル（石材テクスチャ仕上げ）
+    function buildRealMoaiModel(group) {
+        clearGroup(group);
+        const stoneMat = new THREE.MeshStandardMaterial({
+            map: stoneTexture,
+            roughness: 0.9,
+            metalness: 0.1
+        });
+        
+        // 頭部立体
+        const head = new THREE.Mesh(new THREE.BoxGeometry(1.6, 3.2, 1.6, 4, 4, 4), stoneMat);
+        head.position.y = 1.8;
+        
+        // 鼻
+        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1.2, 0.7), stoneMat);
+        nose.position.set(0, 1.8, 0.9);
+        
+        // 額・眉の出っ張り
+        const brow = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.4, 0.8), stoneMat);
+        brow.position.set(0, 2.7, 0.7);
+
+        // 唇
+        const lips = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.3, 0.6), stoneMat);
+        lips.position.set(0, 0.9, 0.8);
+
+        group.add(head, nose, brow, lips);
+    }
+
+    // ★ 3. リアルな「せがれ（キリン首）」モデル
+    function buildRealSegareModel(group) {
+        clearGroup(group);
+        const yellowMat = new THREE.MeshStandardMaterial({
+            color: 0xf2b705,
+            roughness: 0.4,
+            metalness: 0.1
+        });
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.1 });
+
+        // 胴体
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.7, 0.8, 1.6, 16), yellowMat);
         body.position.set(0, 0.8, 0);
-        const neck = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.5, 0.4), yellowMat);
-        neck.position.set(0, 2.0, 0.4);
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.8), yellowMat);
-        head.position.set(0, 3.4, 0.6);
-        group.add(body, neck, head);
-    }
 
-    function buildPoopModel(group) {
-        clearGroup(group);
-        const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 1.0, roughness: 0.1 });
-        const t1 = new THREE.Mesh(new THREE.TorusGeometry(1, 0.5, 16, 32), goldMat);
-        t1.rotation.x = Math.PI/2; t1.position.y = 0.5;
-        const t2 = new THREE.Mesh(new THREE.TorusGeometry(0.6, 0.4, 16, 32), goldMat);
-        t2.rotation.x = Math.PI/2; t2.position.y = 1.2;
-        const top = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1, 16), goldMat);
-        top.position.y = 2.0;
-        group.add(t1, t2, top);
-    }
+        // 首（滑らかなテーパー）
+        const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.5, 3.0, 16), yellowMat);
+        neck.position.set(0, 2.5, 0.3);
+        neck.rotation.x = -0.1;
 
-    function buildMoaiModel(group) {
-        clearGroup(group);
-        const stoneMat = new THREE.MeshStandardMaterial({ color: 0x778899, roughness: 1.0 });
-        const face = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3, 1.5), stoneMat);
-        face.position.y = 1.5;
-        const nose = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.6), stoneMat);
-        nose.position.set(0, 1.5, 1.0);
-        group.add(face, nose);
+        // 頭部
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 1.2), yellowMat);
+        head.position.set(0, 4.0, 0.7);
+
+        // つぶらな瞳
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.12, 16, 16), eyeMat);
+        eyeL.position.set(-0.36, 4.1, 1.0);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.36;
+
+        group.add(body, neck, head, eyeL, eyeR);
     }
 
     function clearGroup(group) {
@@ -322,7 +390,7 @@
         const overlay = document.getElementById('surreal-overlay');
         const uiLayer = document.getElementById('ui-layer');
         
-        uiLayer.style.display = 'none'; // 演出中はUI隠す
+        uiLayer.style.display = 'none';
         overlay.style.display = 'block';
         playCrazySound();
 
@@ -345,12 +413,12 @@
             overlay.style.display = 'none';
             playPop();
 
-            // こまったちゃん（NPC）の姿が変珍！
-            if (w3 === 'unko') buildPoopModel(androidGroup);
-            else if (w3 === 'moai') buildMoaiModel(androidGroup);
-            else if (w3 === 'segare') buildSegareModel(androidGroup);
+            // 選択に応じてリアルに変珍！
+            if (w3 === 'unko') buildRealPoopModel(androidGroup);
+            else if (w3 === 'moai') buildRealMoaiModel(androidGroup);
+            else if (w3 === 'segare') buildRealSegareModel(androidGroup);
             
-            isAnimating = false; // アニメーション終了
+            isAnimating = false;
         }, 3000);
     }
 
@@ -359,27 +427,53 @@
         requestAnimationFrame(animate);
         
         if (playerGroup && androidGroup) {
-            // アニメーション中でない場合のみプレイヤー操作＆UI判定
             if (!isAnimating) {
-                const speed = 0.15;
-                if (keys.w || keys.ArrowUp) playerGroup.position.z -= speed;
-                if (keys.s || keys.ArrowDown) playerGroup.position.z += speed;
-                if (keys.a || keys.ArrowLeft) playerGroup.position.x -= speed;
-                if (keys.d || keys.ArrowRight) playerGroup.position.x += speed;
+                // 移動処理
+                const speed = 0.12;
+                let moveX = 0, moveZ = 0;
+
+                if (keys.w || keys.W || keys.ArrowUp) moveZ -= speed;
+                if (keys.s || keys.S || keys.ArrowDown) moveZ += speed;
+                if (keys.a || keys.A || keys.ArrowLeft) moveX -= speed;
+                if (keys.d || keys.D || keys.ArrowRight) moveX += speed;
+
+                if (moveX !== 0 || moveZ !== 0) {
+                    playerGroup.position.x += moveX;
+                    playerGroup.position.z += moveZ;
+
+                    // 進行方向を向く
+                    playerGroup.rotation.y = Math.atan2(moveX, moveZ);
+
+                    // 歩行アニメーション（手足を振る）
+                    walkTime += 0.2;
+                    if (leftLeg && rightLeg) {
+                        leftLeg.rotation.x = Math.sin(walkTime) * 0.6;
+                        rightLeg.rotation.x = -Math.sin(walkTime) * 0.6;
+                        leftArm.rotation.x = -Math.sin(walkTime) * 0.6;
+                        rightArm.rotation.x = Math.sin(walkTime) * 0.6;
+                    }
+                } else {
+                    // 停止時は姿勢リセット
+                    if (leftLeg && rightLeg) {
+                        leftLeg.rotation.x = 0; rightLeg.rotation.x = 0;
+                        leftArm.rotation.x = 0; rightArm.rotation.x = 0;
+                    }
+                }
 
                 // カメラ追従
                 camera.position.x = playerGroup.position.x;
                 camera.position.z = playerGroup.position.z + 8;
-                camera.lookAt(playerGroup.position);
+                camera.position.y = playerGroup.position.y + 4;
+                camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z);
 
-                // 距離判定（困ったちゃんとの距離）
+                // こまったちゃんとの接近判定
                 const distance = playerGroup.position.distanceTo(androidGroup.position);
                 const uiLayer = document.getElementById('ui-layer');
 
                 if (distance < 4.0) {
-                    uiLayer.style.display = 'flex'; // 近づいたら表示してボタン押せる
+                    uiLayer.style.display = 'flex';
                 } else {
-                    uiLayer.style.display = 'none';  // 離れたら隠す
+                    uiLayer.style.display = 'none';
                 }
             }
         }
