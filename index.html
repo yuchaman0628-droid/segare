@@ -6,8 +6,6 @@
     <title>続・せがれいじり風 変珍3Dシアター</title>
     <!-- Three.js 本体 -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- 外部3Dモデル読み込み用（GLTFLoader） -->
-    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
     
     <style>
         * { box-sizing: border-box; user-select: none; }
@@ -27,7 +25,8 @@
         .start-btn:active { transform: translateY(5px); box-shadow: none; }
 
         /* 3Dキャンバス */
-        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+        #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; cursor: grab; }
+        #canvas-container:active { cursor: grabbing; }
 
         /* 左側のハシゴメーターUI */
         #ladder-ui {
@@ -40,39 +39,47 @@
             font-size: 35px; box-shadow: 0 0 10px rgba(0,0,0,0.5); z-index: 2;
         }
         .ladder-body {
-            width: 30px; flex-grow: 1; margin-top: -10px;
+            position: relative; width: 30px; flex-grow: 1; margin-top: -10px;
             border-left: 6px solid #ffcc00; border-right: 6px solid #ffcc00;
             display: flex; flex-direction: column; justify-content: space-evenly;
-            background: rgba(0,0,0,0.1);
+            background: rgba(0,0,0,0.15);
         }
         .ladder-rung { height: 5px; background: #ffcc00; width: 100%; }
 
-        /* UIパネル (町の人に近づくと表示) */
+        /* ハシゴを登る主人公型アイコン */
+        #player-ladder-icon {
+            position: absolute; left: -8px; bottom: 0%; width: 34px; height: 34px;
+            background: #ffcc00; clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+            border: 2px solid #000; transition: bottom 0.5s ease-out; z-index: 5;
+            filter: drop-shadow(0px 2px 4px rgba(0,0,0,0.5));
+        }
+
+        /* UIパネル (近接時表示) */
         #ui-layer {
             display: none; position: absolute; bottom: 20px; width: 100%; z-index: 20;
             flex-direction: column; align-items: center; pointer-events: none;
         }
         .dialog {
             pointer-events: auto; background: rgba(255,255,255,0.95); border: 4px solid #ffcc00;
-            border-radius: 15px; padding: 15px; margin-bottom: 15px; max-width: 600px;
+            border-radius: 15px; padding: 12px 20px; margin-bottom: 12px; max-width: 600px;
             text-align: center; font-weight: bold; font-size: 18px; color: #333; box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         }
         .sentence-panel {
             pointer-events: auto; background: rgba(0, 0, 0, 0.85); border: 4px solid #00e5ff;
-            border-radius: 15px; padding: 20px; text-align: center;
+            border-radius: 15px; padding: 15px; text-align: center;
         }
         select {
-            font-size: 18px; font-weight: bold; padding: 10px; margin: 5px;
+            font-size: 16px; font-weight: bold; padding: 8px; margin: 4px;
             border-radius: 8px; border: 3px solid #ffaa00; background-color: #fff; cursor: pointer;
         }
         .action-btn {
-            font-size: 22px; font-weight: bold; padding: 12px 30px; margin-top: 10px;
+            font-size: 20px; font-weight: bold; padding: 10px 25px; margin-top: 8px;
             background: #00e5ff; color: #000; border: none; border-radius: 8px; cursor: pointer;
             box-shadow: 0 5px 0 #008b8b;
         }
-        .action-btn:active { transform: translateY(5px); box-shadow: none; }
+        .action-btn:active { transform: translateY(4px); box-shadow: none; }
 
-        /* 変珍（へんちん）シュールアニメーション用オーバーレイ */
+        /* 変珍シュール演出用 */
         #surreal-overlay {
             display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             z-index: 200; background: repeating-radial-gradient(circle, #ff0055, #ffff00 10%, #0000ff 20%);
@@ -90,7 +97,7 @@
 </head>
 <body>
 
-    <!-- オープニング動画（YouTube埋め込み） -->
+    <!-- オープニング動画 -->
     <div id="intro-overlay">
         <h2 style="color:white; margin-bottom: 10px;">続・せがれいじり風 オープニング</h2>
         <iframe width="640" height="360" src="https://www.youtube.com/embed/hpQIPh4-kRE?rel=0" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
@@ -101,31 +108,34 @@
     <div id="ladder-ui">
         <div class="mother-icon">👧</div>
         <div class="ladder-body">
-            <div class="ladder-rung"></div>
-            <div class="ladder-rung"></div>
-            <div class="ladder-rung"></div>
-            <div class="ladder-rung"></div>
-            <div class="ladder-rung"></div>
-            <div class="ladder-rung"></div>
-            <div class="ladder-rung"></div>
-            <div class="ladder-rung"></div>
-            <div class="ladder-rung"></div>
+            <!-- ハシゴを登る主人公アイコン -->
+            <div id="player-ladder-icon"></div>
+            <div class="ladder-rung"></div><div class="ladder-rung"></div>
+            <div class="ladder-rung"></div><div class="ladder-rung"></div>
+            <div class="ladder-rung"></div><div class="ladder-rung"></div>
+            <div class="ladder-rung"></div><div class="ladder-rung"></div>
         </div>
     </div>
 
-    <!-- シュールアニメーション演出（変珍時） -->
+    <!-- 変珍演出 -->
     <div id="surreal-overlay"></div>
 
-    <!-- 3D表示領域 -->
+    <!-- 3D画面 -->
     <div id="canvas-container"></div>
 
-    <!-- UI (町の人の近くで表示) -->
+    <!-- 作文UI -->
     <div id="ui-layer">
-        <div class="dialog">
-            👤 まちのひと<br>
-            「ボクをヘンテコな文章で変珍（へんちん）させてみてくれ～！」
+        <div class="dialog" id="dialog-text">
+            👤 まちのひと<br>「ヘンテコな文章でいじっておくれ～！」
         </div>
         <div class="sentence-panel">
+            <div style="color:#fff; margin-bottom: 5px; font-weight:bold;">
+                変珍（いじる）対象: 
+                <select id="target-select">
+                    <option value="npc">目の前の「まちのひと」</option>
+                    <option value="android">仲間「リアルアンドロイド」</option>
+                </select>
+            </div>
             <select id="w1">
                 <option value="せがれ">せがれが</option>
                 <option value="マザー">マザーの愛で</option>
@@ -134,24 +144,22 @@
             <select id="w2">
                 <option value="dance">激しくブレイクダンスして</option>
                 <option value="stretch">限界まで伸び切って</option>
-                <option value="spin">高速回転しながら</option>
+                <option value="spin">メカメカしく回転して</option>
             </select>
             <select id="w3">
                 <option value="unko">黄金のウンチになった</option>
                 <option value="moai">モアイ像になった</option>
-                <option value="segare">せがれ（本人）になった</option>
+                <option value="segare">メカせがれになった</option>
             </select>
             <br>
-            <button class="action-btn" id="henchin-btn" onclick="triggerHenchin()">変珍（いじる）</button>
+            <button class="action-btn" onclick="triggerHenchin()">変珍（いじる）</button>
         </div>
     </div>
 
 <script>
-    // --- 音声・BGM・SE（Web Audio API & SpeechSynthesis） ---
+    // --- 音声・BGM・SE ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    let bgmOsc = null;
 
-    // ポップなループBGM再生
     function startBGM() {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const notes = [261.63, 329.63, 392.00, 523.25, 392.00, 329.63];
@@ -162,7 +170,7 @@
             osc.connect(gain); gain.connect(audioCtx.destination);
             osc.type = 'triangle';
             osc.frequency.setValueAtTime(notes[noteIdx], audioCtx.currentTime);
-            gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+            gain.gain.setValueAtTime(0.06, audioCtx.currentTime);
             gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
             osc.start(); osc.stop(audioCtx.currentTime + 0.2);
             noteIdx = (noteIdx + 1) % notes.length;
@@ -196,97 +204,120 @@
         osc.start(); osc.stop(audioCtx.currentTime + 0.3);
     }
 
-    // 日本語文章の読み上げ（SpeechSynthesis）
     function speakSentence(text) {
         if ('speechSynthesis' in window) {
             window.speechSynthesis.cancel();
             const uttr = new SpeechSynthesisUtterance(text);
             uttr.lang = 'ja-JP';
-            uttr.pitch = 1.3; // 高めのヘンテコボイス
+            uttr.pitch = 1.3;
             uttr.rate = 1.1;
             window.speechSynthesis.speak(uttr);
         }
     }
 
-    // --- ゲーム開始処理 ---
+    // --- ゲーム開始 ---
     function startGame() {
         document.getElementById('intro-overlay').style.display = 'none';
         if (audioCtx.state === 'suspended') audioCtx.resume();
         startBGM();
         init3D();
-        alert("【操作方法】\n「WASD」または「矢印キー」で主人公を動かそう！\nカメラが自動で後ろに回り込みます。アンドロイドがついてくるよ！");
+        alert("【手動操作方法】\n・WASD / 矢印キー: 移動\n・画面ドラッグ / スワイプ: 視点（カメラ）の自由変更\n・変珍を行うと、左側のハシゴを主人公が登っていきます！");
     }
 
-    // --- Three.js 3Dグラフィック処理 ---
+    // --- Three.js 3D処理 ---
     let scene, camera, renderer;
-    let playerGroup, companionAndroidGroup, npcGroup;
-    let barkTexture, leafTexture, dirtTexture;
-    let playerHeading = 0; // 主人公の向き
+    let playerGroup, companionAndroidGroup;
+    let npcList = []; // 増量した町の人たち
+    let currentTargetNPC = null;
     let isAnimating = false;
+    let ladderProgress = 0; // ハシゴの進行度(%)
     const PLANET_RADIUS = 22;
 
-    const keys = { w: false, a: false, s: false, d: false, W: false, A: false, S: false, D: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+    // 手動カメラコントロール変数
+    let isMouseDown = false;
+    let mouseX = 0, mouseY = 0;
+    let cameraAngleX = 0; // 水平角度
+    let cameraAngleY = 0.4; // 垂直角度
+    let cameraDistance = 9;
+
+    const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
     window.addEventListener('keydown', (e) => { if (e.key in keys) keys[e.key] = true; });
     window.addEventListener('keyup', (e) => { if (e.key in keys) keys[e.key] = false; });
 
     function init3D() {
         const container = document.getElementById('canvas-container');
         scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x38b6ff); // 爽やかな青空の背景色へ修正
 
-        // 1. 空（インターネット上の360度パノラマ素材）
-        const textureLoader = new THREE.TextureLoader();
-        textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/2294472375_24a3b8ef46_o.jpg', (tex) => {
-            tex.mapping = THREE.EquirectangularReflectionMapping;
-            scene.background = tex;
-        });
-
-        // インターネット素材（土・木）の読み込み
-        dirtTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/terrain/grasslight-big.jpg');
-        dirtTexture.wrapS = THREE.RepeatWrapping; dirtTexture.wrapT = THREE.RepeatWrapping;
-        dirtTexture.repeat.set(12, 12);
-
-        barkTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/brick_diffuse.jpg');
-        leafTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/land_ocean_ice_cloud_2048.jpg');
+        // 雲の追加
+        buildClouds();
 
         camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
         
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
         container.appendChild(renderer.domElement);
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+        // 照明
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
         scene.add(ambientLight);
-        const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
-        dirLight.position.set(20, 40, 20);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(30, 50, 30);
         scene.add(dirLight);
 
-        // 2. 地球（球体・素材テクスチャ）
+        // 丸い地球（地面）
+        const textureLoader = new THREE.TextureLoader();
+        const dirtTexture = textureLoader.load('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/textures/terrain/grasslight-big.jpg');
+        dirtTexture.wrapS = THREE.RepeatWrapping; dirtTexture.wrapT = THREE.RepeatWrapping;
+        dirtTexture.repeat.set(12, 12);
+
         const planetGeo = new THREE.SphereGeometry(PLANET_RADIUS, 64, 64);
         const planetMat = new THREE.MeshStandardMaterial({ map: dirtTexture, roughness: 0.8 });
         const planetMesh = new THREE.Mesh(planetGeo, planetMat);
         scene.add(planetMesh);
 
-        // 森と花の配置
+        // 森と花
         buildWorldForest();
 
-        // 3. 主人公（黄色矢印頭）
+        // 主人公（黄色矢印頭）
         playerGroup = new THREE.Group();
         scene.add(playerGroup);
         buildYellowArrowPlayer(playerGroup);
         playerGroup.position.set(0, PLANET_RADIUS, 0);
 
-        // 4. アンドロイド（追従）
+        // リアルアンドロイド
         companionAndroidGroup = new THREE.Group();
         scene.add(companionAndroidGroup);
-        buildCompanionAndroid(companionAndroidGroup);
+        buildRealAndroid(companionAndroidGroup);
         companionAndroidGroup.position.set(0, PLANET_RADIUS, -2);
 
-        // 5. 町の人
-        npcGroup = new THREE.Group();
-        scene.add(npcGroup);
-        buildSurrealNPC(npcGroup);
-        npcGroup.position.set(-4, PLANET_RADIUS, -5);
+        // ★ 町の人を複数人増やす（4人配置）
+        const npcPositions = [
+            { x: -4, z: -4 },
+            { x: 6, z: -5 },
+            { x: -7, z: 5 },
+            { x: 5, z: 6 }
+        ];
+        npcPositions.forEach(pos => {
+            const npc = new THREE.Group();
+            buildSurrealNPC(npc);
+            npc.position.set(pos.x, PLANET_RADIUS, pos.z);
+            scene.add(npc);
+            npcList.push(npc);
+        });
+
+        // 手動カメラドラッグイベント登録
+        container.addEventListener('mousedown', (e) => { isMouseDown = true; mouseX = e.clientX; mouseY = e.clientY; });
+        window.addEventListener('mouseup', () => { isMouseDown = false; });
+        container.addEventListener('mousemove', (e) => {
+            if (!isMouseDown) return;
+            const deltaX = e.clientX - mouseX;
+            const deltaY = e.clientY - mouseY;
+            cameraAngleX -= deltaX * 0.005;
+            cameraAngleY = Math.max(0.1, Math.min(Math.PI / 2.2, cameraAngleY + deltaY * 0.005));
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -297,12 +328,32 @@
         animate();
     }
 
+    // 青空と雲の生成
+    function buildClouds() {
+        const cloudGroup = new THREE.Group();
+        const cloudMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85 });
+        for (let i = 0; i < 20; i++) {
+            const cloud = new THREE.Mesh(new THREE.SphereGeometry(3 + Math.random()*3, 8, 8), cloudMat);
+            cloud.position.set((Math.random()-0.5)*120, 30 + Math.random()*20, (Math.random()-0.5)*120);
+            cloudGroup.add(cloud);
+        }
+        scene.add(cloudGroup);
+    }
+
     function buildWorldForest() {
+        const barkMat = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+        const leafMat = new THREE.MeshStandardMaterial({ color: 0x00b300, roughness: 0.5 });
+
         for (let i = 0; i < 35; i++) {
-            const tree = createTreeMesh();
+            const tree = new THREE.Group();
+            const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.45, 3, 8), barkMat);
+            trunk.position.y = 1.5;
+            const leaf = new THREE.Mesh(new THREE.SphereGeometry(1.3, 12, 12), leafMat);
+            leaf.position.y = 3.2;
+            tree.add(trunk, leaf);
+
             const phi = Math.random() * Math.PI * 0.45;
             const theta = Math.random() * Math.PI * 2;
-
             const x = PLANET_RADIUS * Math.sin(phi) * Math.cos(theta);
             const y = PLANET_RADIUS * Math.cos(phi);
             const z = PLANET_RADIUS * Math.sin(phi) * Math.sin(theta);
@@ -314,34 +365,16 @@
         }
     }
 
-    // インターネット素材を使った木
-    function createTreeMesh() {
-        const group = new THREE.Group();
-        const trunkMat = new THREE.MeshStandardMaterial({ map: barkTexture, roughness: 0.9 });
-        const leafMat = new THREE.MeshStandardMaterial({ color: 0x22aa22, roughness: 0.6 });
-
-        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.45, 3, 10), trunkMat);
-        trunk.position.y = 1.5;
-
-        const leaf = new THREE.Mesh(new THREE.SphereGeometry(1.3, 16, 16), leafMat);
-        leaf.position.y = 3.2;
-
-        group.add(trunk, leaf);
-        return group;
-    }
-
     function buildYellowArrowPlayer(group) {
         clearGroup(group);
-        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.3 });
+        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.2 });
         const bodyMat = new THREE.MeshStandardMaterial({ color: 0x8b5a2b });
 
         const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.8, 0.4), bodyMat);
         body.position.y = 0.8;
-        
         const legL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, 0.2), bodyMat);
         legL.position.set(-0.2, 0.3, 0);
-        const legR = legL.clone();
-        legR.position.x = 0.2;
+        const legR = legL.clone(); legR.position.x = 0.2;
 
         const arrowHead = new THREE.Mesh(new THREE.ConeGeometry(0.65, 0.85, 4), yellowMat);
         arrowHead.position.y = 1.6;
@@ -350,19 +383,36 @@
         group.add(body, legL, legR, arrowHead);
     }
 
-    function buildCompanionAndroid(group) {
+    // ★ アンドロイドのデザインをリアル化（メタリック質感・サイバーアイ・発光部・ジョイント部）
+    function buildRealAndroid(group) {
         clearGroup(group);
-        const metalMat = new THREE.MeshStandardMaterial({ color: 0xbbbbbb, metalness: 0.8, roughness: 0.2 });
-        const eyeMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff });
+        const metalMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.9, roughness: 0.15 });
+        const darkMetalMat = new THREE.MeshStandardMaterial({ color: 0x333333, metalness: 0.8, roughness: 0.3 });
+        const glowEyeMat = new THREE.MeshStandardMaterial({ color: 0x00ffff, emissive: 0x00ffff, emissiveIntensity: 0.8 });
+        const coreMat = new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0xff0055 });
 
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 0.8, 8), metalMat);
-        body.position.y = 0.6;
-        const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.4, 0.4), metalMat);
-        head.position.y = 1.2;
-        const eye = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), eyeMat);
-        eye.position.set(0, 1.25, 0.2);
+        // 胴体
+        const chest = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.7, 0.4), metalMat);
+        chest.position.y = 1.0;
+        const core = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.05, 16), coreMat);
+        core.rotation.x = Math.PI/2; core.position.set(0, 1.0, 0.22);
 
-        group.add(body, head, eye);
+        // 頭部
+        const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.45, 0.45), metalMat);
+        head.position.y = 1.6;
+        const visior = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.1, 0.1), glowEyeMat);
+        visior.position.set(0, 1.65, 0.22);
+
+        // 関節・手足
+        const armL = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.6), darkMetalMat);
+        armL.position.set(-0.45, 0.9, 0);
+        const armR = armL.clone(); armR.position.x = 0.45;
+
+        const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.08, 0.7), darkMetalMat);
+        legL.position.set(-0.2, 0.35, 0);
+        const legR = legL.clone(); legR.position.x = 0.2;
+
+        group.add(chest, core, head, visior, armL, armR, legL, legR);
     }
 
     function buildSurrealNPC(group) {
@@ -381,6 +431,7 @@
         group.add(head, hair, body);
     }
 
+    // 変珍パーツモデル
     function buildPoopModel(group) {
         clearGroup(group);
         const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
@@ -415,11 +466,12 @@
         while(group.children.length > 0) group.remove(group.children[0]);
     }
 
-    // --- 変珍（へんちん）処理（文章読み上げ付き） ---
+    // --- 変珍（へんちん）処理 ---
     function triggerHenchin() {
         if (isAnimating) return;
         isAnimating = true;
 
+        const targetType = document.getElementById('target-select').value;
         const w1Text = document.getElementById('w1').options[document.getElementById('w1').selectedIndex].text;
         const w2Text = document.getElementById('w2').options[document.getElementById('w2').selectedIndex].text;
         const w3Text = document.getElementById('w3').options[document.getElementById('w3').selectedIndex].text;
@@ -433,9 +485,13 @@
         overlay.style.display = 'block';
         
         playCrazySound();
-        speakSentence(fullSentence); // ★ 文章の音読音声
+        speakSentence(fullSentence);
 
-        const words = ["セケーン！", "マザー", "変・珍", "オトナ", "ヤバい", "バカ", "作文"];
+        // ★ 変珍を行うと、ハシゴメーターを主人公アイコンが登る！
+        ladderProgress = Math.min(100, ladderProgress + 20);
+        document.getElementById('player-ladder-icon').style.bottom = ladderProgress + '%';
+
+        const words = ["セケーン！", "マザー", "変・珍", "オトナ", "ヤバい", "バカ", "ヘンテコ"];
         let interval = setInterval(() => {
             const div = document.createElement('div');
             div.className = 'surreal-text';
@@ -454,9 +510,14 @@
             overlay.style.display = 'none';
             playPop();
 
-            if (w3Value === 'unko') buildPoopModel(npcGroup);
-            else if (w3Value === 'moai') buildMoaiModel(npcGroup);
-            else if (w3Value === 'segare') buildSegareModel(npcGroup);
+            // 変身対象の切り替え（町の人 or アンドロイド）
+            const targetGroup = (targetType === 'android') ? companionAndroidGroup : currentTargetNPC;
+
+            if (targetGroup) {
+                if (w3Value === 'unko') buildPoopModel(targetGroup);
+                else if (w3Value === 'moai') buildMoaiModel(targetGroup);
+                else if (w3Value === 'segare') buildSegareModel(targetGroup);
+            }
             
             isAnimating = false;
         }, 3200);
@@ -466,48 +527,42 @@
     function animate() {
         requestAnimationFrame(animate);
         
-        if (playerGroup && companionAndroidGroup && npcGroup) {
+        if (playerGroup && companionAndroidGroup) {
             if (!isAnimating) {
                 const speed = 0.08;
-                let dx = 0, dz = 0;
+                let moved = false;
 
-                if (keys.w || keys.W || keys.ArrowUp) dz -= speed;
-                if (keys.s || keys.S || keys.ArrowDown) dz += speed;
-                if (keys.a || keys.A || keys.ArrowLeft) dx -= speed;
-                if (keys.d || keys.D || keys.ArrowRight) dx += speed;
+                if (keys.w || keys.ArrowUp) { playerGroup.position.z -= speed; moved = true; }
+                if (keys.s || keys.ArrowDown) { playerGroup.position.z += speed; moved = true; }
+                if (keys.a || keys.ArrowLeft) { playerGroup.position.x -= speed; moved = true; }
+                if (keys.d || keys.ArrowRight) { playerGroup.position.x += speed; moved = true; }
 
-                if (dx !== 0 || dz !== 0) {
-                    playerGroup.position.x += dx;
-                    playerGroup.position.z += dz;
-                    playerHeading = Math.atan2(dx, dz);
-                    playerGroup.rotation.y = playerHeading;
-                }
-
-                // 地球のカーブ補正
+                // 地球カーブ維持
                 const dist = Math.sqrt(playerGroup.position.x ** 2 + playerGroup.position.z ** 2);
                 playerGroup.position.y = Math.sqrt(Math.max(1, PLANET_RADIUS ** 2 - dist ** 2));
 
-                // アンドロイドの追従
-                const followOffset = new THREE.Vector3(-Math.sin(playerHeading)*1.2, 0, -Math.cos(playerHeading)*1.2);
-                const targetPos = playerGroup.position.clone().add(followOffset);
-                companionAndroidGroup.position.lerp(targetPos, 0.1);
-                companionAndroidGroup.rotation.y = playerHeading;
+                // リアルアンドロイドのスムーズ追従
+                const targetPos = playerGroup.position.clone().add(new THREE.Vector3(0.8, 0, 1.2));
+                companionAndroidGroup.position.lerp(targetPos, 0.08);
 
-                // ★ カメラの自動回転・背後追従処理（地球の裏側でも画角が破綻しない）
-                const camOffset = new THREE.Vector3(
-                    Math.sin(playerHeading) * -6,
-                    3.5,
-                    Math.cos(playerHeading) * -6
-                );
-                const desiredCamPos = playerGroup.position.clone().add(camOffset);
-                camera.position.lerp(desiredCamPos, 0.08);
+                // ★ 完全手動カメラ位置調整
+                camera.position.x = playerGroup.position.x + cameraDistance * Math.sin(cameraAngleX) * Math.cos(cameraAngleY);
+                camera.position.z = playerGroup.position.z + cameraDistance * Math.cos(cameraAngleX) * Math.cos(cameraAngleY);
+                camera.position.y = playerGroup.position.y + cameraDistance * Math.sin(cameraAngleY);
                 camera.lookAt(playerGroup.position.x, playerGroup.position.y + 0.8, playerGroup.position.z);
 
-                // 町の人との距離判定
-                const distanceToNPC = playerGroup.position.distanceTo(npcGroup.position);
-                const uiLayer = document.getElementById('ui-layer');
+                // 近くの「町の人」を検知
+                let nearNPC = null;
+                for (let npc of npcList) {
+                    if (playerGroup.position.distanceTo(npc.position) < 3.8) {
+                        nearNPC = npc;
+                        break;
+                    }
+                }
 
-                if (distanceToNPC < 3.8) {
+                const uiLayer = document.getElementById('ui-layer');
+                if (nearNPC) {
+                    currentTargetNPC = nearNPC;
                     uiLayer.style.display = 'flex';
                 } else {
                     uiLayer.style.display = 'none';
