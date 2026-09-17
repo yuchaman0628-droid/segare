@@ -3,233 +3,504 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>擬似せがれいじり - 作文システム</title>
+    <title>続・せがれいじり風 3Dアンドロイド改造計画</title>
+    <!-- 3Dライブラリ Three.js CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <style>
-        body {
-            background-color: #f0f0d0;
-            font-family: 'Arial', sans-serif;
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+            background-color: #000;
+        }
+
+        /* 3Dキャンバス容器 */
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* オープニング動画画面 */
+        #intro-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #000;
+            z-index: 100;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            height: 100vh;
-            margin: 0;
-            user-select: none;
+            color: white;
         }
 
-        #game-container {
-            width: 600px;
-            background: #fff;
-            border: 8px solid #555;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 10px 0 #333;
-            text-align: center;
-        }
-
-        /* 映像表示用のキャンバス */
-        #stage {
-            width: 100%;
-            height: 300px;
-            background-color: #87CEEB;
-            border: 4px solid #333;
+        #intro-video {
+            width: 80%;
+            max-width: 800px;
+            height: auto;
+            border: 4px solid #ff0055;
+            box-shadow: 0 0 20px #ff0055;
             border-radius: 8px;
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
         }
 
-        /* キャラクター（せがれ風） */
-        #segare {
-            position: absolute;
-            bottom: 20px;
-            left: 50px;
-            font-size: 60px;
-            transition: all 0.3s ease;
-        }
-
-        /* 吹き出しテキスト */
-        #caption {
-            position: absolute;
-            top: 20px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 10px 20px;
-            border-radius: 20px;
+        .start-btn {
+            margin-top: 20px;
+            padding: 15px 40px;
+            font-size: 24px;
             font-weight: bold;
-            font-size: 18px;
-            border: 2px solid #333;
-            display: none;
+            color: #fff;
+            background: linear-gradient(45deg, #ff007f, #ffaa00);
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(255, 0, 127, 0.5);
+            animation: pulse 1.5s infinite;
         }
 
-        /* 作文スロットUI */
-        .sentence-builder {
-            margin: 20px 0;
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.08); }
+            100% { transform: scale(1); }
+        }
+
+        /* ゲーム画面UI overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10;
+            pointer-events: none;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        /* お悩み吹き出し */
+        .story-dialog {
+            pointer-events: auto;
+            background: rgba(255, 255, 255, 0.9);
+            border: 4px solid #ff007f;
+            border-radius: 20px;
+            padding: 15px 25px;
+            max-width: 600px;
+            margin: 0 auto;
+            text-align: center;
+            box-shadow: 0 8px 0 #cc0066;
+        }
+
+        .story-dialog h3 {
+            margin: 0 0 5px 0;
+            color: #ff007f;
+            font-size: 18px;
+        }
+
+        .story-dialog p {
+            margin: 0;
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        /* アニメーション字幕表示 */
+        #caption-box {
+            position: absolute;
+            top: 25%;
+            width: 100%;
+            text-align: center;
+            font-size: 32px;
+            font-weight: 900;
+            color: #ffff00;
+            text-shadow: 3px 3px 0 #000, -3px -3px 0 #000, 3px -3px 0 #000, -3px 3px 0 #000;
+            display: none;
+            pointer-events: none;
+        }
+
+        /* 作文パネル */
+        .sentence-panel {
+            pointer-events: auto;
+            background: rgba(0, 0, 0, 0.7);
+            border: 4px solid #00e5ff;
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            max-width: 800px;
+            margin: 0 auto 20px auto;
+        }
+
+        .select-group {
+            display: flex;
             gap: 10px;
+            justify-content: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
         }
 
         select {
             font-size: 18px;
-            padding: 8px 12px;
-            border: 3px solid #f2a900;
-            border-radius: 8px;
-            background-color: #fff8dc;
             font-weight: bold;
+            padding: 10px;
+            border-radius: 8px;
+            border: 3px solid #ffaa00;
+            background-color: #fff8dc;
             cursor: pointer;
         }
 
-        button {
-            font-size: 20px;
-            padding: 10px 25px;
-            background-color: #ff4500;
-            color: white;
-            border: none;
-            border-radius: 8px;
+        .action-btn {
+            font-size: 22px;
             font-weight: bold;
+            padding: 12px 35px;
+            background: #00e5ff;
+            color: #000;
+            border: none;
+            border-radius: 12px;
             cursor: pointer;
-            box-shadow: 0 4px 0 #b33000;
+            box-shadow: 0 6px 0 #008b8b;
             transition: transform 0.1s;
         }
 
-        button:active {
-            transform: translateY(4px);
+        .action-btn:active {
+            transform: translateY(6px);
             box-shadow: none;
-        }
-
-        /* アニメーション演出用のクラス */
-        .giant { transform: scale(2.5) translateY(-30px); }
-        .spin { animation: spin 0.5s infinite linear; }
-        .dance { animation: dance 0.3s infinite alternate; }
-
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        @keyframes dance {
-            0% { transform: translateY(0) rotate(-10deg); }
-            100% { transform: translateY(-30px) rotate(10deg); }
         }
     </style>
 </head>
 <body>
 
-<div id="game-container">
-    <h2>せいさくシアター</h2>
-    
-    <!-- 映像（アニメーション）表示エリア -->
-    <div id="stage">
-        <div id="caption"></div>
-        <div id="segare">🦒</div>
+    <!-- オープニング動画画面 -->
+    <div id="intro-overlay">
+        <h2>『続 せ发れいじり』風 3Dシアター</h2>
+        <!-- ★実際の動画ファイル(mp4等)がある場合は src を差し替えてください -->
+        <video id="intro-video" controls loop autoplay muted poster="https://via.placeholder.com/800x450/111/fff?text=ZOKU+SEGARE+OPENING">
+            <source src="https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4" type="video/mp4">
+            お使いのブラウザは動画タグに対応していません。
+        </video>
+        <button class="start-btn" onclick="startGame()">街へいく（ゲームスタート）</button>
     </div>
 
-    <!-- 作文選択メニュー -->
-    <div class="sentence-builder">
-        <select id="word1">
-            <option value="segare">せがれが</option>
-            <option value="mother">マザーが</option>
-            <option value="unko">ウンチが</option>
-        </select>
+    <!-- 3D表示領域 -->
+    <div id="canvas-container"></div>
 
-        <select id="word2">
-            <option value="dance">激しく踊りながら</option>
-            <option value="giant">急激に巨大化して</option>
-            <option value="spin">高速回転しながら</option>
-        </select>
+    <!-- UIオーバーレイ -->
+    <div id="ui-layer">
+        <!-- アンドロイドのお悩み -->
+        <div class="story-dialog">
+            <h3>🤖 街のアンドロイド住民</h3>
+            <p>「地味な見た目の自分に飽きちゃったロボ…！言葉の力でボクのカラダをステキに変身させてほしいロボ！」</p>
+        </div>
 
-        <select id="word3">
-            <option value="fly">空へ飛び去った。</option>
-            <option value="explode">大爆発した！</option>
-            <option value="smile">ニッコリ微笑んだ。</option>
-        </select>
+        <!-- アニメーション時テロップ -->
+        <div id="caption-box"></div>
+
+        <!-- 作文コントロール -->
+        <div class="sentence-panel">
+            <div class="select-group">
+                <select id="w1">
+                    <option value="呪文">おバカな呪文で</option>
+                    <option value="マザー">マザーのパワーで</option>
+                    <option value="せがれ">せがれがナデナデして</option>
+                </select>
+                <select id="w2">
+                    <option value="回転">激しく回転しながら</option>
+                    <option value="巨大化">巨大な光を放って</option>
+                    <option value="ジャンプ">高々と跳ね上がって</option>
+                </select>
+                <select id="w3">
+                    <option value="unko">黄金のウンプになった！</option>
+                    <option value="giraffe">ギガキリン首になった！</option>
+                    <option value="donut">超巨大ドーナツになった！</option>
+                    <option value="moai">シュールなモアイ像になった！</option>
+                </select>
+            </div>
+            <button class="action-btn" onclick="executeTransformation()">変身（いじる）</button>
+        </div>
     </div>
-
-    <button onclick="playAnimation()">決定（いじる）</button>
-</div>
 
 <script>
-    // Web Audio API を使ったSE（効果音）の簡易生成
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-    function playSound(type) {
+    // --- 1. オープニング処理 ---
+    function startGame() {
+        const intro = document.getElementById('intro-overlay');
+        const video = document.getElementById('intro-video');
+        video.pause();
+        intro.style.display = 'none';
+        
+        // オーディオコンテキストの有効化
         if (audioCtx.state === 'suspended') {
             audioCtx.resume();
         }
+        playSound('start');
+    }
+
+    // --- 2. 簡易Web Audio SE（効果音） ---
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
         osc.connect(gain);
         gain.connect(audioCtx.destination);
 
-        if (type === 'pop') {
-            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+        if (type === 'start') {
+            osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.3);
             gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.1);
-        } else if (type === 'boom') {
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.3);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.3);
+        } else if (type === 'transform') {
             osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.4);
-            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
-            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
-            osc.start();
-            osc.stop(audioCtx.currentTime + 0.4);
+            osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+            osc.frequency.linearRampToValueAtTime(800, audioCtx.currentTime + 0.5);
+            gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5);
+            osc.start(); osc.stop(audioCtx.currentTime + 0.5);
         }
     }
 
-    function playAnimation() {
-        const w1 = document.getElementById('word1');
-        const w2 = document.getElementById('word2');
-        const w3 = document.getElementById('word3');
-        
-        const segare = document.getElementById('segare');
-        const caption = document.getElementById('caption');
-
-        // 文章の組み立て
-        const text = `${w1.options[w1.selectedIndex].text}${w2.options[w2.selectedIndex].text}${w3.options[w3.selectedIndex].text}`;
-        
-        // 字幕表示
-        caption.innerText = text;
-        caption.style.display = 'block';
-
-        // キャラクター見た目変更
-        const charMap = { segare: '🦒', mother: '🦒母', unko: '💩' };
-        segare.innerText = charMap[w1.value];
-
-        // リセット
-        segare.className = '';
-        segare.style.left = '50px';
-        segare.style.opacity = '1';
-
-        playSound('pop');
-
-        // 動作（word2）の反映
-        setTimeout(() => {
-            segare.classList.add(w2.value);
-            
-            // 結末（word3）の反映
-            setTimeout(() => {
-                if (w3.value === 'fly') {
-                    segare.style.transition = 'all 1s ease-in';
-                    segare.style.transform = 'translateY(-400px)';
-                    playSound('pop');
-                } else if (w3.value === 'explode') {
-                    playSound('boom');
-                    segare.innerText = '💥';
-                    setTimeout(() => { segare.style.opacity = '0'; }, 300);
-                } else if (w3.value === 'smile') {
-                    playSound('pop');
-                    segare.innerText = '✨😄✨';
-                }
-            }, 1000);
-
-        }, 300);
+    // --- 3. SpeechSynthesis（音声読み上げ） ---
+    function speakText(text) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const uttr = new SpeechSynthesisUtterance(text);
+            uttr.lang = 'ja-JP';
+            uttr.pitch = 1.4; // 高い声でシュール感
+            uttr.rate = 1.2;
+            window.speechSynthesis.speak(uttr);
+        }
     }
-</script>
 
+    // --- 4. Three.js 3Dグラフィック設定 ---
+    let scene, camera, renderer, androidGroup, currentMesh;
+    let isAnimating = false;
+
+    function init3D() {
+        const container = document.getElementById('canvas-container');
+        
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87ceeb); // 青空
+
+        camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+        camera.position.set(0, 3, 8);
+        camera.lookAt(0, 1.5, 0);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        // ライティング
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(5, 10, 7);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // 床（街の広場風）
+        const floorGeo = new THREE.PlaneGeometry(50, 50);
+        const floorMat = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.8 });
+        const floor = new THREE.Mesh(floorGeo, floorMat);
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        // アンドロイドのグループを作成
+        androidGroup = new THREE.Group();
+        androidGroup.position.set(0, 0, 0);
+        scene.add(androidGroup);
+
+        // 初期状態：ノーマルアンドロイド構築
+        buildDefaultAndroid();
+
+        // リサイズ対応
+        window.addEventListener('resize', onWindowResize);
+
+        // ループアニメーション
+        animate();
+    }
+
+    // デフォルトのアンドロイドメッシュ作成
+    function buildDefaultAndroid() {
+        clearAndroid();
+
+        const mat = new THREE.MeshStandardMaterial({ color: 0x00e5ff, metalness: 0.5, roughness: 0.2 });
+        const jointMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+
+        // 頭
+        const head = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), mat);
+        head.position.y = 2.2;
+        head.castShadow = true;
+        androidGroup.add(head);
+
+        // 目
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff0055 });
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.15, 8, 8), eyeMat);
+        eyeL.position.set(-0.25, 2.3, 0.5);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = 0.25;
+        androidGroup.add(eyeL, eyeR);
+
+        // 胴体
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.6, 1.2, 16), mat);
+        body.position.y = 1.1;
+        body.castShadow = true;
+        androidGroup.add(body);
+
+        // 手足（簡略表現）
+        const limbGeo = new THREE.CylinderGeometry(0.15, 0.15, 1, 8);
+        const legL = new THREE.Mesh(limbGeo, jointMat);
+        legL.position.set(-0.35, 0.5, 0);
+        const legR = legL.clone();
+        legR.position.x = 0.35;
+        
+        androidGroup.add(legL, legR);
+    }
+
+    function clearAndroid() {
+        while(androidGroup.children.length > 0){ 
+            androidGroup.remove(androidGroup.children[0]); 
+        }
+    }
+
+    // --- 5. 変身ロジック（作文に応じた3D形状変化） ---
+    function executeTransformation() {
+        if (isAnimating) return;
+        isAnimating = true;
+
+        const w1 = document.getElementById('w1');
+        const w2 = document.getElementById('w2');
+        const w3 = document.getElementById('w3');
+
+        const sentence = `${w1.options[w1.selectedIndex].text}${w2.options[w2.selectedIndex].text}${w3.options[w3.selectedIndex].text}`;
+        
+        // 字幕と音声
+        const captionBox = document.getElementById('caption-box');
+        captionBox.innerText = sentence;
+        captionBox.style.display = 'block';
+        speakText(sentence);
+
+        // アクションに応じたモーショントークン
+        const actionType = w2.value;
+        const resultType = w3.value;
+
+        // アニメーション演出タイムライン
+        let startTime = performance.now();
+        
+        function animateTransform(now) {
+            let elapsed = (now - startTime) / 1000;
+
+            if (actionType === '回転') {
+                androidGroup.rotation.y = elapsed * 15;
+            } else if (actionType === '巨大化') {
+                let s = 1 + Math.sin(elapsed * 10) * 0.3;
+                androidGroup.scale.set(s, s, s);
+            } else if (actionType === 'ジャンプ') {
+                androidGroup.position.y = Math.abs(Math.sin(elapsed * 8)) * 2;
+            }
+
+            if (elapsed < 1.5) {
+                requestAnimationFrame(animateTransform);
+            } else {
+                // 変身実行！
+                playSound('transform');
+                applyNewForm(resultType);
+
+                // モーションリセット
+                androidGroup.rotation.set(0, 0, 0);
+                androidGroup.scale.set(1, 1, 1);
+                androidGroup.position.set(0, 0, 0);
+
+                setTimeout(() => {
+                    captionBox.style.display = 'none';
+                    isAnimating = false;
+                }, 2000);
+            }
+        }
+
+        requestAnimationFrame(animateTransform);
+    }
+
+    // 選択された結末に応じてパーツを生成
+    function applyNewForm(type) {
+        clearAndroid();
+
+        if (type === 'unko') {
+            // 黄金のウンチ型
+            const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.8, roughness: 0.1 });
+            const b1 = new THREE.Mesh(new THREE.TorusGeometry(1, 0.4, 16, 32), goldMat);
+            b1.rotation.x = Math.PI / 2; b1.position.y = 0.4;
+            const b2 = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.3, 16, 32), goldMat);
+            b2.rotation.x = Math.PI / 2; b2.position.y = 1.0;
+            const top = new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.8, 16), goldMat);
+            top.position.y = 1.6;
+
+            androidGroup.add(b1, b2, top);
+
+        } else if (type === 'giraffe') {
+            // ギガキリン首型
+            const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00 });
+            const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.4, 4, 16), yellowMat);
+            neck.position.y = 2;
+
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 1.2), yellowMat);
+            head.position.set(0, 4.2, 0.3);
+
+            androidGroup.add(neck, head);
+
+        } else if (type === 'donut') {
+            // 巨大ドーナツ型
+            const pinkMat = new THREE.MeshStandardMaterial({ color: 0xff69b4, roughness: 0.3 });
+            const donut = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.6, 16, 50), pinkMat);
+            donut.position.y = 2;
+            androidGroup.add(donut);
+
+        } else if (type === 'moai') {
+            // モアイ像
+            const stoneMat = new THREE.MeshStandardMaterial({ color: 0x778899, roughness: 0.9 });
+            const face = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.5, 1.2), stoneMat);
+            face.position.y = 1.8;
+            const nose = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.8, 0.5), stoneMat);
+            nose.position.set(0, 1.8, 0.8);
+
+            androidGroup.add(face, nose);
+        }
+    }
+
+    function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+
+    // レンダリングループ
+    function animate() {
+        requestAnimationFrame(animate);
+
+        // 待機時のフワフワした動き
+        if (!isAnimating) {
+            androidGroup.position.y = Math.sin(Date.now() * 0.003) * 0.1;
+            androidGroup.rotation.y += 0.005;
+        }
+
+        renderer.render(scene, camera);
+    }
+
+    // 起動時初期化
+    window.onload = init3D;
+</script>
 </body>
 </html>
