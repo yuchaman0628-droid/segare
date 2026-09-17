@@ -108,7 +108,7 @@
                 <option value="segare">せがれ（本人）になった</option>
             </select>
             <br>
-            <button class="action-btn" onclick="triggerHenchin()">変珍（いじる）</button>
+            <button class="action-btn" id="henchin-btn" onclick="triggerHenchin()">変珍（いじる）</button>
         </div>
     </div>
 
@@ -148,14 +148,12 @@
         document.getElementById('intro-overlay').style.display = 'none';
         if (audioCtx.state === 'suspended') audioCtx.resume();
         init3D();
-        // プレイヤーに操作方法を1回だけ通知
-        alert("【操作方法】\nキーボードの「WASD」または「矢印キー」で主人公（手前のキャラクター）を動かして、奥にいるこまったちゃんに近づいてお願いを聞いてね！");
+        alert("【操作方法】\nキーボードの「WASD」または「矢印キー」で矢印頭の主人公を動かして、奥にいるこまったちゃんに近づいてお願いを聞いてね！");
     }
 
     // --- Three.js 3Dグラフィック処理 ---
     let scene, camera, renderer, androidGroup, playerGroup;
     let isAnimating = false;
-    let isNearNPC = false; // NPC接近フラグ
 
     // キーボード入力の状態管理
     const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
@@ -183,20 +181,20 @@
         floor.rotation.x = -Math.PI / 2;
         scene.add(floor);
 
-        // 1. こまったちゃん（人間型アンドロイド・NPC）のグループ
+        // 1. こまったちゃん（人間型アンドロイド・NPC）
         androidGroup = new THREE.Group();
-        androidGroup.position.set(0, 0, -6); // 最初は奥に配置
+        androidGroup.position.set(0, 0, -6);
         scene.add(androidGroup);
 
-        // 2. 主人公（プレイヤー）のグループ
+        // 2. 主人公（矢印の頭＋人間の身体）
         playerGroup = new THREE.Group();
-        playerGroup.position.set(0, 0, 0); // 最初は手前
+        playerGroup.position.set(0, 0, 0);
         scene.add(playerGroup);
 
-        // モデルの構築
-        buildSegareModel(playerGroup); // 主人公（せがれ）を作る
+        // 主人公モデル構築（矢印頭＋人間身体）
+        buildArrowPlayerModel(playerGroup);
         
-        // ★ インターネット上の無料人間型3Dモデル（Xbot）を読み込む
+        // インターネット上の無料人間型3Dモデル（Xbot）を読み込む
         loadInternetModel('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/models/gltf/Xbot.glb', androidGroup);
 
         window.addEventListener('resize', () => {
@@ -208,7 +206,52 @@
         animate();
     }
 
-    // 外部の人間型3Dモデルを読み込む関数
+    // ★ 主人公モデル（頭：赤矢印, 体：人間風の関節パーツ）
+    function buildArrowPlayerModel(group) {
+        clearGroup(group);
+        
+        const skinMat = new THREE.MeshStandardMaterial({ color: 0xffdbac }); // 肌色
+        const shirtMat = new THREE.MeshStandardMaterial({ color: 0x0088ff }); // 青シャツ
+        const pantsMat = new THREE.MeshStandardMaterial({ color: 0x333333 }); // 黒ズボン
+        const arrowMat = new THREE.MeshStandardMaterial({ color: 0xff0000, metalness: 0.3 }); // 赤矢印頭
+
+        // --- 1. 人間の身体 ---
+        // 胴体
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.2, 0.5), shirtMat);
+        torso.position.y = 1.6;
+        
+        // 脚
+        const legL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 1.0, 0.3), pantsMat);
+        legL.position.set(-0.25, 0.5, 0);
+        const legR = legL.clone();
+        legR.position.x = 0.25;
+
+        // 腕
+        const armL = new THREE.Mesh(new THREE.BoxGeometry(0.25, 1.0, 0.25), skinMat);
+        armL.position.set(-0.55, 1.5, 0);
+        const armR = armL.clone();
+        armR.position.x = 0.55;
+
+        group.add(torso, legL, legR, armL, armR);
+
+        // --- 2. 矢印の頭 ---
+        const arrowHeadGroup = new THREE.Group();
+        arrowHeadGroup.position.y = 2.6; // 首の上
+
+        // 矢印のコーン部分（三角頭）
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.6, 0.8, 4), arrowMat);
+        cone.position.y = 0.4;
+        cone.rotation.y = Math.PI / 4;
+
+        // 矢印の軸（首との結合部）
+        const stem = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.3), arrowMat);
+        stem.position.y = -0.1;
+
+        arrowHeadGroup.add(cone, stem);
+        group.add(arrowHeadGroup);
+    }
+
+    // 外部モデル読み込み用関数
     function loadInternetModel(url, targetGroup) {
         const loader = new THREE.GLTFLoader();
         loader.load(url, function(gltf) {
@@ -218,11 +261,10 @@
             targetGroup.add(model);
         }, undefined, function(error) {
             console.error('モデルの読み込みに失敗しました', error);
-            buildDefaultAndroid(targetGroup); // 失敗時の保険
+            buildDefaultAndroid(targetGroup);
         });
     }
 
-    // 各種モデル構築用関数（対象グループを指定できるように改修）
     function buildDefaultAndroid(group) {
         clearGroup(group);
         const mat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.8 });
@@ -280,7 +322,7 @@
         const overlay = document.getElementById('surreal-overlay');
         const uiLayer = document.getElementById('ui-layer');
         
-        uiLayer.style.display = 'none'; // 演出中はUIを隠す
+        uiLayer.style.display = 'none'; // 演出中はUI隠す
         overlay.style.display = 'block';
         playCrazySound();
 
@@ -303,13 +345,12 @@
             overlay.style.display = 'none';
             playPop();
 
-            // NPC（こまったちゃん）の姿が変化！
+            // こまったちゃん（NPC）の姿が変珍！
             if (w3 === 'unko') buildPoopModel(androidGroup);
             else if (w3 === 'moai') buildMoaiModel(androidGroup);
             else if (w3 === 'segare') buildSegareModel(androidGroup);
             
-            uiLayer.style.display = 'flex'; // UI戻す
-            isAnimating = false;
+            isAnimating = false; // アニメーション終了
         }, 3000);
     }
 
@@ -317,34 +358,28 @@
     function animate() {
         requestAnimationFrame(animate);
         
-        if (!isAnimating && playerGroup && androidGroup) {
-            // --- プレイヤーの移動処理 ---
-            const speed = 0.15;
-            if (keys.w || keys.ArrowUp) playerGroup.position.z -= speed;
-            if (keys.s || keys.ArrowDown) playerGroup.position.z += speed;
-            if (keys.a || keys.ArrowLeft) playerGroup.position.x -= speed;
-            if (keys.d || keys.ArrowRight) playerGroup.position.x += speed;
+        if (playerGroup && androidGroup) {
+            // アニメーション中でない場合のみプレイヤー操作＆UI判定
+            if (!isAnimating) {
+                const speed = 0.15;
+                if (keys.w || keys.ArrowUp) playerGroup.position.z -= speed;
+                if (keys.s || keys.ArrowDown) playerGroup.position.z += speed;
+                if (keys.a || keys.ArrowLeft) playerGroup.position.x -= speed;
+                if (keys.d || keys.ArrowRight) playerGroup.position.x += speed;
 
-            // カメラを主人公（プレイヤー）の後ろに追従させる
-            camera.position.x = playerGroup.position.x;
-            camera.position.z = playerGroup.position.z + 8;
-            camera.lookAt(playerGroup.position);
+                // カメラ追従
+                camera.position.x = playerGroup.position.x;
+                camera.position.z = playerGroup.position.z + 8;
+                camera.lookAt(playerGroup.position);
 
-            // --- 接近判定（こまったちゃんのお願いを聞く） ---
-            const distance = playerGroup.position.distanceTo(androidGroup.position);
-            const uiLayer = document.getElementById('ui-layer');
+                // 距離判定（困ったちゃんとの距離）
+                const distance = playerGroup.position.distanceTo(androidGroup.position);
+                const uiLayer = document.getElementById('ui-layer');
 
-            if (distance < 3.5) {
-                // 近づいたらUIを表示
-                if (!isNearNPC) {
-                    uiLayer.style.display = 'flex';
-                    isNearNPC = true;
-                }
-            } else {
-                // 離れたらUIを隠す
-                if (isNearNPC) {
-                    uiLayer.style.display = 'none';
-                    isNearNPC = false;
+                if (distance < 4.0) {
+                    uiLayer.style.display = 'flex'; // 近づいたら表示してボタン押せる
+                } else {
+                    uiLayer.style.display = 'none';  // 離れたら隠す
                 }
             }
         }
