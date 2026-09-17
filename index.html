@@ -29,10 +29,10 @@
         /* 3Dキャンバス */
         #canvas-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
 
-        /* UIパネル */
+        /* UIパネル (※最初は非表示、近づくと表示) */
         #ui-layer {
-            position: absolute; bottom: 20px; width: 100%; z-index: 10;
-            display: flex; flex-direction: column; align-items: center; pointer-events: none;
+            display: none; position: absolute; bottom: 20px; width: 100%; z-index: 10;
+            flex-direction: column; align-items: center; pointer-events: none;
         }
         .dialog {
             pointer-events: auto; background: rgba(255,255,255,0.9); border: 4px solid #ffcc00;
@@ -85,10 +85,10 @@
     <!-- 3D表示領域 -->
     <div id="canvas-container"></div>
 
-    <!-- UI -->
+    <!-- UI (近づいた時だけ表示) -->
     <div id="ui-layer">
         <div class="dialog">
-            🤖 アンドロイド住民<br>
+            👤 こまったちゃん（人間型アンドロイド）<br>
             「平凡な見た目に飽きたロボ…。作文の力でボクを変珍（へんちん）させてほしいロボ！」
         </div>
         <div class="sentence-panel">
@@ -116,25 +116,18 @@
     // --- 音声・SE（Web Audio API） ---
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 
-    // 変珍時の狂気的なサウンド（PS1/PS2時代のバカゲー風）
     function playCrazySound() {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         const osc = audioCtx.createOscillator();
         const gain = audioCtx.createGain();
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        
+        osc.connect(gain); gain.connect(audioCtx.destination);
         osc.type = 'square';
         osc.frequency.setValueAtTime(50, audioCtx.currentTime);
-        
-        // 周波数をランダムに乱高下させて壊れたゲーム感を出す
         for(let i=0; i<30; i++) {
             osc.frequency.setValueAtTime(Math.random() * 2000 + 100, audioCtx.currentTime + (i * 0.1));
         }
-        
         gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
         gain.gain.linearRampToValueAtTime(0.01, audioCtx.currentTime + 3.0);
-        
         osc.start(); osc.stop(audioCtx.currentTime + 3.0);
     }
 
@@ -155,41 +148,56 @@
         document.getElementById('intro-overlay').style.display = 'none';
         if (audioCtx.state === 'suspended') audioCtx.resume();
         init3D();
+        // プレイヤーに操作方法を1回だけ通知
+        alert("【操作方法】\nキーボードの「WASD」または「矢印キー」で主人公（手前のキャラクター）を動かして、奥にいるこまったちゃんに近づいてお願いを聞いてね！");
     }
 
     // --- Three.js 3Dグラフィック処理 ---
-    let scene, camera, renderer, androidGroup;
+    let scene, camera, renderer, androidGroup, playerGroup;
     let isAnimating = false;
+    let isNearNPC = false; // NPC接近フラグ
+
+    // キーボード入力の状態管理
+    const keys = { w: false, a: false, s: false, d: false, ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false };
+    window.addEventListener('keydown', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = true; });
+    window.addEventListener('keyup', (e) => { if(keys.hasOwnProperty(e.key)) keys[e.key] = false; });
 
     function init3D() {
         const container = document.getElementById('canvas-container');
         scene = new THREE.Scene();
-        scene.background = new THREE.Color(0x87ceeb); // 青空
+        scene.background = new THREE.Color(0x87ceeb);
 
         camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.set(0, 3, 8);
-        camera.lookAt(0, 1, 0);
-
+        
         renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         container.appendChild(renderer.domElement);
 
-        // 光源
         const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
         scene.add(ambientLight);
         const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
         dirLight.position.set(5, 10, 7);
         scene.add(dirLight);
 
-        // 床
         const floor = new THREE.Mesh(new THREE.PlaneGeometry(50, 50), new THREE.MeshStandardMaterial({ color: 0x55aa55 }));
         floor.rotation.x = -Math.PI / 2;
         scene.add(floor);
 
+        // 1. こまったちゃん（人間型アンドロイド・NPC）のグループ
         androidGroup = new THREE.Group();
+        androidGroup.position.set(0, 0, -6); // 最初は奥に配置
         scene.add(androidGroup);
 
-        buildDefaultAndroid(); // 初期のロボット作成
+        // 2. 主人公（プレイヤー）のグループ
+        playerGroup = new THREE.Group();
+        playerGroup.position.set(0, 0, 0); // 最初は手前
+        scene.add(playerGroup);
+
+        // モデルの構築
+        buildSegareModel(playerGroup); // 主人公（せがれ）を作る
+        
+        // ★ インターネット上の無料人間型3Dモデル（Xbot）を読み込む
+        loadInternetModel('https://cdn.jsdelivr.net/gh/mrdoob/three.js@master/examples/models/gltf/Xbot.glb', androidGroup);
 
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
@@ -200,52 +208,45 @@
         animate();
     }
 
-    // ★ インターネット上の外部3Dモデルを読み込む機能（GLTFLoader）
-    // （※CORSエラーを防ぐため、デフォルトはコメントアウトして自作のプログラムモデルを優先しています）
-    function loadInternetModel(url) {
+    // 外部の人間型3Dモデルを読み込む関数
+    function loadInternetModel(url, targetGroup) {
         const loader = new THREE.GLTFLoader();
         loader.load(url, function(gltf) {
-            clearGroup(androidGroup);
+            clearGroup(targetGroup);
             const model = gltf.scene;
             model.scale.set(1.5, 1.5, 1.5);
-            androidGroup.add(model);
+            targetGroup.add(model);
         }, undefined, function(error) {
-            console.error('モデルの読み込みに失敗しました（CORS制限の可能性があります）', error);
-            // 失敗時はプログラムで生成したせがれ風モデルを表示
-            buildSegareModel(); 
+            console.error('モデルの読み込みに失敗しました', error);
+            buildDefaultAndroid(targetGroup); // 失敗時の保険
         });
     }
 
-    // 1. 初期状態のアンドロイド（地味なロボット）
-    function buildDefaultAndroid() {
-        clearGroup(androidGroup);
+    // 各種モデル構築用関数（対象グループを指定できるように改修）
+    function buildDefaultAndroid(group) {
+        clearGroup(group);
         const mat = new THREE.MeshStandardMaterial({ color: 0x999999, metalness: 0.8 });
         const body = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.5, 1), mat);
         body.position.y = 1.5;
         const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), mat);
         head.position.y = 2.8;
-        androidGroup.add(body, head);
+        group.add(body, head);
     }
 
-    // 2. プログラムで構築した「せがれ」風モデル（外部モデル読込エラー時の確実な表示用）
-    function buildSegareModel() {
-        clearGroup(androidGroup);
-        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.3, roughness: 0.4 }); // せがれイエロー
-        // 胴体
+    function buildSegareModel(group) {
+        clearGroup(group);
+        const yellowMat = new THREE.MeshStandardMaterial({ color: 0xffcc00, metalness: 0.3, roughness: 0.4 });
         const body = new THREE.Mesh(new THREE.BoxGeometry(1, 0.8, 1.5), yellowMat);
         body.position.set(0, 0.8, 0);
-        // 長い首
         const neck = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.5, 0.4), yellowMat);
         neck.position.set(0, 2.0, 0.4);
-        // 頭
         const head = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.6, 0.8), yellowMat);
         head.position.set(0, 3.4, 0.6);
-        androidGroup.add(body, neck, head);
+        group.add(body, neck, head);
     }
 
-    // 3. その他の変珍フォーム
-    function buildPoopModel() {
-        clearGroup(androidGroup);
+    function buildPoopModel(group) {
+        clearGroup(group);
         const goldMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 1.0, roughness: 0.1 });
         const t1 = new THREE.Mesh(new THREE.TorusGeometry(1, 0.5, 16, 32), goldMat);
         t1.rotation.x = Math.PI/2; t1.position.y = 0.5;
@@ -253,17 +254,17 @@
         t2.rotation.x = Math.PI/2; t2.position.y = 1.2;
         const top = new THREE.Mesh(new THREE.ConeGeometry(0.4, 1, 16), goldMat);
         top.position.y = 2.0;
-        androidGroup.add(t1, t2, top);
+        group.add(t1, t2, top);
     }
 
-    function buildMoaiModel() {
-        clearGroup(androidGroup);
+    function buildMoaiModel(group) {
+        clearGroup(group);
         const stoneMat = new THREE.MeshStandardMaterial({ color: 0x778899, roughness: 1.0 });
         const face = new THREE.Mesh(new THREE.BoxGeometry(1.5, 3, 1.5), stoneMat);
         face.position.y = 1.5;
         const nose = new THREE.Mesh(new THREE.BoxGeometry(0.5, 1, 0.6), stoneMat);
         nose.position.set(0, 1.5, 1.0);
-        androidGroup.add(face, nose);
+        group.add(face, nose);
     }
 
     function clearGroup(group) {
@@ -277,12 +278,12 @@
 
         const w3 = document.getElementById('w3').value;
         const overlay = document.getElementById('surreal-overlay');
+        const uiLayer = document.getElementById('ui-layer');
         
-        // 1. シュール演出スタート
+        uiLayer.style.display = 'none'; // 演出中はUIを隠す
         overlay.style.display = 'block';
-        playCrazySound(); // カオスな電子音
+        playCrazySound();
 
-        // 謎の文字を画面に乱舞させる
         const words = ["セケーン！", "マザー", "変・珍", "オトナ", "ヤバい", "バカ", "作文"];
         let interval = setInterval(() => {
             const div = document.createElement('div');
@@ -296,33 +297,58 @@
             setTimeout(() => div.remove(), 300);
         }, 150);
 
-        // 3秒後に演出終了、姿が変化
         setTimeout(() => {
             clearInterval(interval);
             overlay.innerHTML = '';
             overlay.style.display = 'none';
-            playPop(); // 決定音
+            playPop();
 
-            // 結果に応じた姿へ変珍！
-            if (w3 === 'unko') buildPoopModel();
-            else if (w3 === 'moai') buildMoaiModel();
-            else if (w3 === 'segare') {
-                // インターネット上のモデルを読み込む場合はここにURLを入れます。
-                // 例: loadInternetModel('https://example.com/segare_model.glb');
-                // ※今回はエラー回避のため、確実に出るプログラム製せがれモデルを呼び出します。
-                buildSegareModel();
-            }
+            // NPC（こまったちゃん）の姿が変化！
+            if (w3 === 'unko') buildPoopModel(androidGroup);
+            else if (w3 === 'moai') buildMoaiModel(androidGroup);
+            else if (w3 === 'segare') buildSegareModel(androidGroup);
             
+            uiLayer.style.display = 'flex'; // UI戻す
             isAnimating = false;
         }, 3000);
     }
 
+    // メインアニメーションループ
     function animate() {
         requestAnimationFrame(animate);
-        if (!isAnimating) {
-            // アイドル時のフワフワ・回転
-            androidGroup.rotation.y += 0.01;
+        
+        if (!isAnimating && playerGroup && androidGroup) {
+            // --- プレイヤーの移動処理 ---
+            const speed = 0.15;
+            if (keys.w || keys.ArrowUp) playerGroup.position.z -= speed;
+            if (keys.s || keys.ArrowDown) playerGroup.position.z += speed;
+            if (keys.a || keys.ArrowLeft) playerGroup.position.x -= speed;
+            if (keys.d || keys.ArrowRight) playerGroup.position.x += speed;
+
+            // カメラを主人公（プレイヤー）の後ろに追従させる
+            camera.position.x = playerGroup.position.x;
+            camera.position.z = playerGroup.position.z + 8;
+            camera.lookAt(playerGroup.position);
+
+            // --- 接近判定（こまったちゃんのお願いを聞く） ---
+            const distance = playerGroup.position.distanceTo(androidGroup.position);
+            const uiLayer = document.getElementById('ui-layer');
+
+            if (distance < 3.5) {
+                // 近づいたらUIを表示
+                if (!isNearNPC) {
+                    uiLayer.style.display = 'flex';
+                    isNearNPC = true;
+                }
+            } else {
+                // 離れたらUIを隠す
+                if (isNearNPC) {
+                    uiLayer.style.display = 'none';
+                    isNearNPC = false;
+                }
+            }
         }
+
         renderer.render(scene, camera);
     }
 </script>
