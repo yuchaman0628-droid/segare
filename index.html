@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>擬似せがれいじり - 作文システム</title>
+    <style>
+        body {
+            background-color: #f0f0d0;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            user-select: none;
+        }
+
+        #game-container {
+            width: 600px;
+            background: #fff;
+            border: 8px solid #555;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 10px 0 #333;
+            text-align: center;
+        }
+
+        /* 映像表示用のキャンバス */
+        #stage {
+            width: 100%;
+            height: 300px;
+            background-color: #87CEEB;
+            border: 4px solid #333;
+            border-radius: 8px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* キャラクター（せがれ風） */
+        #segare {
+            position: absolute;
+            bottom: 20px;
+            left: 50px;
+            font-size: 60px;
+            transition: all 0.3s ease;
+        }
+
+        /* 吹き出しテキスト */
+        #caption {
+            position: absolute;
+            top: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 18px;
+            border: 2px solid #333;
+            display: none;
+        }
+
+        /* 作文スロットUI */
+        .sentence-builder {
+            margin: 20px 0;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+
+        select {
+            font-size: 18px;
+            padding: 8px 12px;
+            border: 3px solid #f2a900;
+            border-radius: 8px;
+            background-color: #fff8dc;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        button {
+            font-size: 20px;
+            padding: 10px 25px;
+            background-color: #ff4500;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            box-shadow: 0 4px 0 #b33000;
+            transition: transform 0.1s;
+        }
+
+        button:active {
+            transform: translateY(4px);
+            box-shadow: none;
+        }
+
+        /* アニメーション演出用のクラス */
+        .giant { transform: scale(2.5) translateY(-30px); }
+        .spin { animation: spin 0.5s infinite linear; }
+        .dance { animation: dance 0.3s infinite alternate; }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        @keyframes dance {
+            0% { transform: translateY(0) rotate(-10deg); }
+            100% { transform: translateY(-30px) rotate(10deg); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <h2>せいさくシアター</h2>
+    
+    <!-- 映像（アニメーション）表示エリア -->
+    <div id="stage">
+        <div id="caption"></div>
+        <div id="segare">🦒</div>
+    </div>
+
+    <!-- 作文選択メニュー -->
+    <div class="sentence-builder">
+        <select id="word1">
+            <option value="segare">せがれが</option>
+            <option value="mother">マザーが</option>
+            <option value="unko">ウンチが</option>
+        </select>
+
+        <select id="word2">
+            <option value="dance">激しく踊りながら</option>
+            <option value="giant">急激に巨大化して</option>
+            <option value="spin">高速回転しながら</option>
+        </select>
+
+        <select id="word3">
+            <option value="fly">空へ飛び去った。</option>
+            <option value="explode">大爆発した！</option>
+            <option value="smile">ニッコリ微笑んだ。</option>
+        </select>
+    </div>
+
+    <button onclick="playAnimation()">決定（いじる）</button>
+</div>
+
+<script>
+    // Web Audio API を使ったSE（効果音）の簡易生成
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+    function playSound(type) {
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'pop') {
+            osc.frequency.setValueAtTime(400, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(800, audioCtx.currentTime + 0.1);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.1);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.1);
+        } else if (type === 'boom') {
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 0.4);
+            gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+            gain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.4);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.4);
+        }
+    }
+
+    function playAnimation() {
+        const w1 = document.getElementById('word1');
+        const w2 = document.getElementById('word2');
+        const w3 = document.getElementById('word3');
+        
+        const segare = document.getElementById('segare');
+        const caption = document.getElementById('caption');
+
+        // 文章の組み立て
+        const text = `${w1.options[w1.selectedIndex].text}${w2.options[w2.selectedIndex].text}${w3.options[w3.selectedIndex].text}`;
+        
+        // 字幕表示
+        caption.innerText = text;
+        caption.style.display = 'block';
+
+        // キャラクター見た目変更
+        const charMap = { segare: '🦒', mother: '🦒母', unko: '💩' };
+        segare.innerText = charMap[w1.value];
+
+        // リセット
+        segare.className = '';
+        segare.style.left = '50px';
+        segare.style.opacity = '1';
+
+        playSound('pop');
+
+        // 動作（word2）の反映
+        setTimeout(() => {
+            segare.classList.add(w2.value);
+            
+            // 結末（word3）の反映
+            setTimeout(() => {
+                if (w3.value === 'fly') {
+                    segare.style.transition = 'all 1s ease-in';
+                    segare.style.transform = 'translateY(-400px)';
+                    playSound('pop');
+                } else if (w3.value === 'explode') {
+                    playSound('boom');
+                    segare.innerText = '💥';
+                    setTimeout(() => { segare.style.opacity = '0'; }, 300);
+                } else if (w3.value === 'smile') {
+                    playSound('pop');
+                    segare.innerText = '✨😄✨';
+                }
+            }, 1000);
+
+        }, 300);
+    }
+</script>
+
+</body>
+</html>
